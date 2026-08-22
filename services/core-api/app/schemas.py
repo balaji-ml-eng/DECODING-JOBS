@@ -1,0 +1,126 @@
+"""Pydantic request/response schemas for the core-api service."""
+
+from datetime import datetime
+from decimal import Decimal
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.models.domain import ApplicationStatus, EmploymentType, WorkMode
+
+
+class CompanySentimentRead(BaseModel):
+    """AI-synthesized pros/cons shown in the Company Pulse section."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    pros: list[str] = Field(default_factory=list)
+    cons: list[str] = Field(default_factory=list)
+
+
+class CompanyRead(BaseModel):
+    """API representation of a Company, with PostGIS geometry flattened to lat/lng."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    name: str
+    description: str | None = None
+    logo_url: str | None = None
+    website_url: str | None = None
+    address: str
+    latitude: float
+    longitude: float
+    sentiment_summary: CompanySentimentRead | None = None
+    culture_score: float | None = None
+    # Phase 2: real company enrichment fields.
+    sector: str | None = None
+    stage: str | None = None
+    area: str | None = None
+    city: str | None = None
+    founded_year: int | None = None
+    team_size: str | None = None
+    total_funding: str | None = None
+    linkedin_url: str | None = None
+    jobs_url: str | None = None
+    status: str | None = None
+    active_job_count: int = 0
+    created_at: datetime
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_active_job_count(cls, data: "CompanyRead") -> "CompanyRead":
+        """Pull the _active_job_count attribute set by the API route onto the response."""
+        if hasattr(data, "_active_job_count"):
+            data.active_job_count = data._active_job_count
+        elif isinstance(data, dict) and "_active_job_count" in data:
+            data["active_job_count"] = data.pop("_active_job_count")
+        return data
+
+
+class BoundingBoxQuery(BaseModel):
+    """Validated map-viewport bounding box for the spatial company search endpoint."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    min_lat: float = Field(..., ge=-90, le=90, description="Southwest corner latitude")
+    min_lng: float = Field(..., ge=-180, le=180, description="Southwest corner longitude")
+    max_lat: float = Field(..., ge=-90, le=90, description="Northeast corner latitude")
+    max_lng: float = Field(..., ge=-180, le=180, description="Northeast corner longitude")
+
+    @model_validator(mode="after")
+    def check_bounds_are_ordered(self) -> "BoundingBoxQuery":
+        if self.min_lat >= self.max_lat:
+            raise ValueError("min_lat must be less than max_lat")
+        if self.min_lng >= self.max_lng:
+            raise ValueError("min_lng must be less than max_lng")
+        return self
+
+
+class JobRead(BaseModel):
+    """API representation of a Job posting."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    company_id: int
+    title: str
+    description: str
+    employment_type: EmploymentType
+    min_experience_years: int
+    salary_min: Decimal | None = None
+    salary_max: Decimal | None = None
+    work_mode: WorkMode | None = None
+    apply_url: str | None = None
+    is_active: bool
+    # Phase 2: job source tracking.
+    source: str | None = None
+    source_url: str | None = None
+    created_at: datetime
+
+
+class JobWithCompanyRead(JobRead):
+    """A Job posting with its parent Company embedded — used for the detail view."""
+
+    company: CompanyRead
+
+
+class ApplicationSubmitRequest(BaseModel):
+    """Body for POST /applications/submit — the Document Vault's SUBMIT APPLICATION action."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: int
+    resume_filename: str = Field(..., min_length=1, max_length=255)
+
+
+class ApplicationRead(BaseModel):
+    """API representation of a submitted Application."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    job_id: int
+    user_id: int | None = None
+    resume_filename: str
+    status: ApplicationStatus
+    applied_at: datetime

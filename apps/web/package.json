@@ -1,0 +1,41 @@
+{
+  "name": "@decoding-jobs/web",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "verify": "node scripts/verify-frontend.mjs"
+  },
+  "dependencies": {
+    "@radix-ui/react-slot": "1.1.1",
+    "@radix-ui/react-switch": "1.1.2",
+    "@tanstack/react-query": "5.101.4",
+    "@types/supercluster": "^7.1.3",
+    "class-variance-authority": "0.7.1",
+    "clsx": "2.1.1",
+    "lucide-react": "0.469.0",
+    "maplibre-gl": "5.24.0",
+    "next": "15.5.22",
+    "react": "19.0.0",
+    "react-dom": "19.0.0",
+    "react-map-gl": "8.1.2",
+    "supercluster": "^9.0.0",
+    "tailwind-merge": "2.6.0",
+    "zustand": "5.0.14"
+  },
+  "devDependencies": {
+    "@eslint/eslintrc": "3.2.0",
+    "@tailwindcss/postcss": "4.3.3",
+    "@types/node": "22.10.5",
+    "@types/react": "19.0.2",
+    "@types/react-dom": "19.0.2",
+    "eslint": "9.17.0",
+    "eslint-config-next": "15.5.22",
+    "playwright": "1.62.1",
+    "tailwindcss": "4.3.3",
+    "typescript": "5.7.2"
+  }
+}

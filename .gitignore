@@ -1,0 +1,23 @@
+# Environment secrets
+.env
+.env.local
+
+# Allow the core-api .env (non-sensitive dev defaults needed by Docker Compose)
+!services/core-api/.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node
+node_modules/
+scripts/node_modules/
+scripts/package-lock.json
+
+# Next.js
+.next/
+
+# Docker / OS
+.DS_Store

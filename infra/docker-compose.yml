@@ -1,0 +1,58 @@
+name: decoding-jobs
+
+services:
+  postgis:
+    image: postgis/postgis:16-3.4-alpine
+    container_name: decoding-jobs-postgis
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-decoding_admin}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-decoding_pass_dev}
+      POSTGRES_DB: ${POSTGRES_DB:-decoding_jobs}
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      # Named volume persists data across container restarts/rebuilds.
+      - postgis_data:/var/lib/postgresql/data
+      # Init scripts run once, alphabetically, only on first-ever container start.
+      - ./init-db:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-decoding_admin} -d ${POSTGRES_DB:-decoding_jobs}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    networks:
+      - decoding-jobs-net
+
+  core-api:
+    build:
+      context: ../services/core-api
+      dockerfile: Dockerfile
+      target: development
+    container_name: decoding-jobs-core-api
+    restart: unless-stopped
+    env_file:
+      - ../services/core-api/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-decoding_admin}:${POSTGRES_PASSWORD:-decoding_pass_dev}@postgis:5432/${POSTGRES_DB:-decoding_jobs}
+      ENVIRONMENT: development
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:3001,http://localhost:3002,http://localhost:3333,http://127.0.0.1:3000}
+    ports:
+      - "${API_PORT:-8000}:8000"
+    volumes:
+      # Bind-mount source for hot reload; container's venv is left untouched.
+      - ../services/core-api/app:/app/app
+    depends_on:
+      postgis:
+        condition: service_healthy
+    networks:
+      - decoding-jobs-net
+
+networks:
+  decoding-jobs-net:
+    driver: bridge
+
+volumes:
+  postgis_data:
