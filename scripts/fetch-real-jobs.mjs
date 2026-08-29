@@ -480,18 +480,33 @@ async function main() {
     allJobs.push(...jobs);
   }
 
-  if (allJobs.length === 0) {
+  if (allJobs.length > 0) {
+    const companies = await groupByCompany(allJobs);
+    console.log(`\n  Total raw postings: ${allJobs.length}`);
+    console.log(`  Unique companies: ${companies.length}`);
+
+    const { companiesSeeded, jobsSeeded } = await seedCompanies(companies);
+    console.log(`\n✅ Done — seeded ${companiesSeeded} companies, ${jobsSeeded} jobs.`);
+  } else {
     console.log("\nNo jobs fetched — check API keys / city name / network access.");
-    return;
   }
 
-  const companies = await groupByCompany(allJobs);
-  console.log(`\n  Total raw postings: ${allJobs.length}`);
-  console.log(`  Unique companies: ${companies.length}`);
+  await expireStaleJobs();
+}
 
-  const { companiesSeeded, jobsSeeded } = await seedCompanies(companies);
-
-  console.log(`\n✅ Done — seeded ${companiesSeeded} companies, ${jobsSeeded} jobs.`);
+async function expireStaleJobs() {
+  const days = Number(process.env.STALE_JOB_DAYS || 21);
+  try {
+    const res = await fetch(`${API_BASE}/api/v1/jobs/expire-stale?days=${days}`, { method: "POST" });
+    if (!res.ok) {
+      console.error(`  ⚠ Stale-job sweep failed: ${res.status}`);
+      return;
+    }
+    const { expired_count } = await res.json();
+    console.log(`  🧹 Stale-job sweep: marked ${expired_count} unrefreshed job(s) inactive (>${days}d).`);
+  } catch (err) {
+    console.error(`  ⚠ Stale-job sweep request failed: ${err.message}`);
+  }
 }
 
 main().catch((err) => {

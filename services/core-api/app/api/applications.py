@@ -1,15 +1,156 @@
-"""Application-related API routes: submitting a job application."""
+"""Application-related API routes: the Application Tracker's Kanban board."""
 
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
+from app.api.users import get_or_create_user
 from app.db.session import get_db
-from app.models.domain import Application, Job
-from app.schemas import ApplicationRead, ApplicationSubmitRequest
+from app.models.domain import Application, ApplicationStatus, EmailEvent, Job
+from app.schemas import (
+    ApplicationBoardRead,
+    ApplicationRead,
+    ApplicationRoundUpdate,
+    ApplicationSaveRequest,
+    ApplicationStatusUpdate,
+    ApplicationSubmitRequest,
+)
 
 router = APIRouter(prefix="/applications", tags=["applications"])
+
+
+@router.get(
+    "/board",
+    response_model=list[ApplicationBoardRead],
+    summary="List a user's applications for the Kanban tracker, newest-moved first",
+)
+async def get_board(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    email: str = Query(..., min_length=3, description="Identifies the tracker owner"),
+) -> list[Application]:
+    """Returns every Saved/Applied/Interviewing/Offered card for this email.
+
+    Phase 1 has no login — `email` alone (via get_or_create_user) is the
+    tracker's identity, matching the map's 1-Click Apply flow.
+    """
+    user = await get_or_create_user(db, email)
+    await db.commit()
+
+    result = await db.execute(
+        select(Application)
+        .options(selectinload(Application.job).selectinload(Job.company))
+        .where(Application.user_id == user.id)
+        .order_by(Application.updated_at.desc())
+    )
+    applications = list(result.scalars().all())
+
+    auto_tracked_result = await db.execute(
+        select(EmailEvent.application_id)
+        .where(EmailEvent.user_id == user.id, EmailEvent.matched.is_(True))
+        .distinct()
+    )
+    auto_tracked_ids = {row[0] for row in auto_tracked_result.all()}
+    for application in applications:
+        application._auto_tracked = application.id in auto_tracked_ids
+
+    return applications
+
+
+@router.post(
+    "/save",
+    response_model=ApplicationBoardRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Bookmark a job into the tracker's Saved column",
+)
+async def save_job(
+    payload: ApplicationSaveRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Application:
+    """Idempotent: re-saving a job you've already saved/applied to just returns it."""
+    job = await db.get(Job, payload.job_id)
+    if job is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail=f"Job {payload.job_id} not found")
+
+    user = await get_or_create_user(db, payload.user_email)
+
+    existing = await db.execute(
+        select(Application).where(Application.job_id == payload.job_id, Application.user_id == user.id)
+    )
+    application = existing.scalar_one_or_none()
+
+    if application is None:
+        application = Application(job_id=payload.job_id, user_id=user.id, status=ApplicationStatus.SAVED)
+        db.add(application)
+
+    await db.commit()
+
+    result = await db.execute(
+        select(Application)
+        .options(selectinload(Application.job).selectinload(Job.company))
+        .where(Application.id == application.id)
+    )
+    return result.scalar_one()
+
+
+@router.patch(
+    "/{application_id}/status",
+    response_model=ApplicationBoardRead,
+    summary="Move a card to a new Kanban column",
+)
+async def update_status(
+    application_id: int,
+    payload: ApplicationStatusUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Application:
+    application = await db.get(Application, application_id)
+    if application is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Application {application_id} not found"
+        )
+
+    application.status = payload.status
+    # Entering Interviewing for the first time starts at Round 1; leaving it
+    # (back to Saved/Applied, or forward to Offer) keeps the round as history.
+    if payload.status == ApplicationStatus.INTERVIEW and application.interview_round is None:
+        application.interview_round = 1
+    await db.commit()
+
+    result = await db.execute(
+        select(Application)
+        .options(selectinload(Application.job).selectinload(Job.company))
+        .where(Application.id == application_id)
+    )
+    return result.scalar_one()
+
+
+@router.patch(
+    "/{application_id}/round",
+    response_model=ApplicationBoardRead,
+    summary="Advance (or set) the interview round for a card in the Interviewing column",
+)
+async def update_round(
+    application_id: int,
+    payload: ApplicationRoundUpdate,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Application:
+    application = await db.get(Application, application_id)
+    if application is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail=f"Application {application_id} not found"
+        )
+
+    application.interview_round = payload.interview_round
+    await db.commit()
+
+    result = await db.execute(
+        select(Application)
+        .options(selectinload(Application.job).selectinload(Job.company))
+        .where(Application.id == application_id)
+    )
+    return result.scalar_one()
 
 
 @router.post(
@@ -22,10 +163,13 @@ async def submit_application(
     payload: ApplicationSubmitRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Application:
-    """Creates an Application row with status 'applied' for the given job.
+    """Creates (or advances) an Application row with status 'applied'.
 
-    Phase 1 has no auth/session system yet, so `user_id` is left unset —
-    submissions are currently anonymous.
+    If `user_email` is supplied and that job was already saved/applied to by
+    the same user, this updates that existing row in place — so bookmarking
+    a job in the tracker and later applying doesn't create a duplicate card.
+    Omitting `user_email` submits anonymously, same as before Phase 1's
+    tracker existed.
     """
     job = await db.get(Job, payload.job_id)
     if job is None:
@@ -34,11 +178,26 @@ async def submit_application(
             detail=f"Job {payload.job_id} not found",
         )
 
-    application = Application(
-        job_id=payload.job_id,
-        resume_filename=payload.resume_filename,
-    )
-    db.add(application)
+    application = None
+    if payload.user_email:
+        user = await get_or_create_user(db, payload.user_email)
+        existing = await db.execute(
+            select(Application).where(Application.job_id == payload.job_id, Application.user_id == user.id)
+        )
+        application = existing.scalar_one_or_none()
+
+    if application:
+        application.status = ApplicationStatus.APPLIED
+        application.resume_filename = payload.resume_filename
+    else:
+        application = Application(
+            job_id=payload.job_id,
+            user_id=user.id if payload.user_email else None,
+            resume_filename=payload.resume_filename,
+            status=ApplicationStatus.APPLIED,
+        )
+        db.add(application)
+
     await db.commit()
     await db.refresh(application)
 

@@ -474,6 +474,7 @@ export function MapWorkspace() {
   const [selectedCity, setSelectedCity] = useState("Bengaluru");
   const [cityDropdownOpen, setCityDropdownOpen] = useState(false);
   const [hiringOnly, setHiringOnly] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const isFirstRender = useRef(true);
   const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [zoom, setZoom] = useState(6);
@@ -731,9 +732,9 @@ export function MapWorkspace() {
       </Map>
 
       {/* ── Top toolbar ── */}
-      <div className="absolute left-4 right-4 top-4 flex items-center gap-2">
+      <div className="absolute left-4 right-4 top-4 flex flex-wrap items-center gap-2">
         {/* Search with autocomplete */}
-        <div className="relative flex-1 max-w-sm" ref={searchRef}>
+        <div className="relative min-w-[180px] flex-1 sm:max-w-sm" ref={searchRef}>
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-green-400 z-10" />
           <Input
             value={searchValue}
@@ -911,19 +912,34 @@ export function MapWorkspace() {
           {hiringOnly ? "Hiring" : "All"}
         </button>
 
+        {/* Mobile filters toggle — the always-visible left panel becomes a
+            bottom sheet below `md`, opened from here. */}
+        <button
+          type="button"
+          onClick={() => setMobileFiltersOpen(true)}
+          className="flex items-center gap-1.5 rounded-xl bg-white px-3.5 py-2 text-sm font-semibold text-gray-600 shadow-lg transition-all hover:bg-green-50 hover:text-green-700 md:hidden"
+        >
+          <Filter className="h-4 w-4" />
+          {activeFilterCount > 0 && (
+            <span className="rounded-full bg-green-500 px-1.5 py-0.5 text-[9px] font-bold text-white">
+              {activeFilterCount}
+            </span>
+          )}
+        </button>
+
         {/* Status */}
         {isLoading && (
-          <div className="flex items-center gap-1.5 rounded-xl bg-white px-3 py-2 text-xs font-medium text-gray-500 shadow-lg">
+          <div className="hidden items-center gap-1.5 rounded-xl bg-white px-3 py-2 text-xs font-medium text-gray-500 shadow-lg sm:flex">
             <Loader2 className="h-3.5 w-3.5 animate-spin text-green-500" /> Loading…
           </div>
         )}
         {isError && (
-          <div className="flex items-center gap-1.5 rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-500 shadow-lg">
+          <div className="hidden items-center gap-1.5 rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-500 shadow-lg sm:flex">
             <AlertTriangle className="h-3.5 w-3.5" /> Error
           </div>
         )}
         {!isLoading && !isError && filteredCompanies && (
-          <div className="flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-xs font-semibold shadow-lg">
+          <div className="hidden items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-xs font-semibold shadow-lg sm:flex">
             {searchQuery && (
               <span className="rounded-md bg-green-100 px-1.5 py-0.5 text-[9px] font-bold text-green-700">
                 "{searchQuery}"
@@ -972,8 +988,20 @@ export function MapWorkspace() {
       </div>
 
       {/* ── Filter panel ── */}
+      {/* Mobile backdrop — the panel becomes a bottom sheet below `md`. */}
+      {mobileFiltersOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/30 md:hidden"
+          onClick={() => setMobileFiltersOpen(false)}
+        />
+      )}
       <div
-        className="absolute left-4 top-20 w-56 max-h-[calc(100%-100px)] overflow-y-auto rounded-2xl border border-gray-100 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.12)]"
+        className={cn(
+          "z-50 overflow-y-auto rounded-2xl border border-gray-100 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.12)]",
+          "fixed inset-x-3 bottom-3 max-h-[75vh]",
+          "md:absolute md:inset-x-auto md:bottom-auto md:left-4 md:top-20 md:z-30 md:w-56 md:max-h-[calc(100%-100px)] md:block",
+          mobileFiltersOpen ? "block" : "hidden"
+        )}
         style={{ animation: "fadeSlideUp 0.3s ease-out" }}
       >
         {/* Header */}
@@ -996,6 +1024,13 @@ export function MapWorkspace() {
               Clear all
             </button>
           )}
+          <button
+            type="button"
+            onClick={() => setMobileFiltersOpen(false)}
+            className={cn("shrink-0 rounded-full bg-gray-100 p-1 text-gray-500 md:hidden", activeFilterCount === 0 && "ml-auto")}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
 
         {/* Active filter chips */}

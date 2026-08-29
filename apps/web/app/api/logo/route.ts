@@ -1,22 +1,25 @@
 import { NextRequest, NextResponse } from "next/server";
 
-// 1x1 transparent PNG (avoids broken img icons on 404)
+// 1x1 transparent PNG (avoids broken img icons on error)
 const TRANSPARENT_PNG = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
   "base64"
 );
 
-// Server-side LRU cache: domain → {body, contentType, status}
-const MAX_CACHE = 500;
-const logoCache = new Map<string, { body: Buffer; ct: string; ts: number }>();
+const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
-function getCacheKey(domain: string): string {
-  return domain;
-}
+// Small in-memory L1 cache purely to shave latency on hot repeat requests
+// within this process — NOT the source of truth. The durable, shared cache
+// lives in Postgres behind core-api's /api/v1/logos (see services/core-api/
+// app/api/logos.py), so a restart/redeploy or a second frontend instance
+// never has to re-fetch from Google — it just re-hits that endpoint.
+const MAX_L1_CACHE = 200;
+const l1Cache = new Map<string, { body: Buffer; ct: string; ts: number }>();
+const L1_TTL_MS = 10 * 60 * 1000; // 10 minutes — short, since core-api owns durability
 
 /**
  * GET /api/logo?domain=razorpay.com
- * Proxies company logos from Google's favicon service with aggressive caching.
+ * Proxies company logos through core-api's durable Postgres-backed cache.
  */
 export async function GET(req: NextRequest) {
   const domain = req.nextUrl.searchParams.get("domain");
@@ -29,11 +32,8 @@ export async function GET(req: NextRequest) {
     return transparentResponse(86400);
   }
 
-  const key = getCacheKey(clean);
-  const cached = logoCache.get(key);
-
-  // Return cached if less than 6 hours old
-  if (cached && Date.now() - cached.ts < 6 * 3600 * 1000) {
+  const cached = l1Cache.get(clean);
+  if (cached && Date.now() - cached.ts < L1_TTL_MS) {
     return new NextResponse(cached.body, {
       status: 200,
       headers: {
@@ -45,24 +45,18 @@ export async function GET(req: NextRequest) {
   }
 
   try {
-    const url = `https://www.google.com/s2/favicons?domain=${clean}&sz=128`;
-    const res = await fetch(url, {
-      redirect: "follow",
-      headers: { "User-Agent": "Mozilla/5.0" },
-      signal: AbortSignal.timeout(5000), // 5s timeout
+    const res = await fetch(`${API_BASE_URL}/api/v1/logos?domain=${encodeURIComponent(clean)}`, {
+      signal: AbortSignal.timeout(6000),
     });
 
     if (!res.ok) {
-      // Cache the transparent PNG so we don't re-fetch failed domains
-      cachePut(key, TRANSPARENT_PNG, "image/png");
       return transparentResponse(3600);
     }
 
     const contentType = res.headers.get("content-type") || "image/png";
     const body = Buffer.from(await res.arrayBuffer());
 
-    // Cache the successful response
-    cachePut(key, body, contentType);
+    cachePut(clean, body, contentType);
 
     return new NextResponse(body, {
       status: 200,
@@ -73,18 +67,16 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch {
-    cachePut(key, TRANSPARENT_PNG, "image/png");
     return transparentResponse(3600);
   }
 }
 
 function cachePut(key: string, body: Buffer, ct: string) {
-  // Evict oldest if at capacity
-  if (logoCache.size >= MAX_CACHE) {
-    const oldest = logoCache.keys().next().value;
-    if (oldest) logoCache.delete(oldest);
+  if (l1Cache.size >= MAX_L1_CACHE) {
+    const oldest = l1Cache.keys().next().value;
+    if (oldest) l1Cache.delete(oldest);
   }
-  logoCache.set(key, { body, ct, ts: Date.now() });
+  l1Cache.set(key, { body, ct, ts: Date.now() });
 }
 
 function transparentResponse(maxAge: number) {
