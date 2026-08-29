@@ -232,6 +232,39 @@ docker compose up -d --build   # Recreate from scratch
 
 ---
 
+## Real Data Ingestion
+
+Company/job data is populated via `scripts/fetch-real-jobs.mjs`, which pulls **real** postings from legitimate, ToS-safe sources (no LinkedIn/Naukri scraping):
+
+- **Adzuna Jobs API** — free-tier, real India listings with real apply links.
+- **Greenhouse / Lever public job-board JSON** — no auth needed, real postings from companies using those ATSs.
+
+```bash
+cd scripts
+npm install
+cp .env.example .env
+# Fill in ADZUNA_APP_ID / ADZUNA_APP_KEY — free signup at https://developer.adzuna.com/
+
+npm run fetch:jobs            # both sources, all cities
+npm run fetch:jobs:adzuna     # Adzuna only
+npm run fetch:jobs:boards     # Greenhouse/Lever only
+
+node fetch-real-jobs.mjs --city=Mumbai --source=all   # a single city
+```
+
+Covers all major India tech hubs: Bengaluru, Chennai, Hyderabad, Kochi, Mumbai, Pune, Delhi NCR, Kolkata, Ahmedabad. The script upserts companies by name and skips jobs it has already seeded, so it's safe to re-run.
+
+To keep listings fresh automatically, start the optional refresher container:
+
+```bash
+cd infra
+docker compose --profile refresh up -d
+```
+
+This re-runs the fetcher on a 6-hour loop against the running core-api.
+
+---
+
 ## Deployment
 
 ### Backend (Production)

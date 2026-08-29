@@ -119,13 +119,15 @@ export async function searchCompaniesInBoundingBox(
 }
 
 /** Matches GET /api/v1/companies/sectors on services/core-api. */
-export async function getSectors(): Promise<{ sector: string; count: number }[]> {
-  return fetchJson<{ sector: string; count: number }[]>(`/api/v1/companies/sectors`);
+export async function getSectors(city?: string): Promise<{ sector: string; count: number }[]> {
+  const params = city ? `?city=${encodeURIComponent(city)}` : "";
+  return fetchJson<{ sector: string; count: number }[]>(`/api/v1/companies/sectors${params}`);
 }
 
 /** Matches GET /api/v1/companies/stages on services/core-api. */
-export async function getStages(): Promise<{ stage: string; count: number }[]> {
-  return fetchJson<{ stage: string; count: number }[]>(`/api/v1/companies/stages`);
+export async function getStages(city?: string): Promise<{ stage: string; count: number }[]> {
+  const params = city ? `?city=${encodeURIComponent(city)}` : "";
+  return fetchJson<{ stage: string; count: number }[]>(`/api/v1/companies/stages${params}`);
 }
 
 /** Matches GET /api/v1/companies/areas on services/core-api. */
@@ -141,8 +143,8 @@ export async function getTypes(city?: string): Promise<{ type: string; count: nu
 }
 
 /** Matches GET /api/v1/companies/cities on services/core-api. */
-export async function getCities(): Promise<{ city: string; count: number }[]> {
-  return fetchJson<{ city: string; count: number }[]>(`/api/v1/companies/cities`);
+export async function getCities(): Promise<{ city: string; count: number; hiring_count: number }[]> {
+  return fetchJson<{ city: string; count: number; hiring_count: number }[]>(`/api/v1/companies/cities`);
 }
 
 /** Matches GET /api/v1/companies/{company_id} on services/core-api. */

@@ -95,14 +95,14 @@ async def search_companies(
 )
 async def list_sectors(
     db: Annotated[AsyncSession, Depends(get_db)],
+    city: str | None = Query(None, description="Scope counts to a single city"),
 ) -> list[dict]:
     """Returns the list of distinct sectors with company counts."""
-    result = await db.execute(
-        select(Company.sector, func.count(Company.id))
-        .where(Company.sector.isnot(None))
-        .group_by(Company.sector)
-        .order_by(func.count(Company.id).desc())
-    )
+    stmt = select(Company.sector, func.count(Company.id)).where(Company.sector.isnot(None))
+    if city:
+        stmt = stmt.where(Company.city == city)
+    stmt = stmt.group_by(Company.sector).order_by(func.count(Company.id).desc())
+    result = await db.execute(stmt)
     return [{"sector": row[0], "count": row[1]} for row in result.all()]
 
 
@@ -112,14 +112,14 @@ async def list_sectors(
 )
 async def list_stages(
     db: Annotated[AsyncSession, Depends(get_db)],
+    city: str | None = Query(None, description="Scope counts to a single city"),
 ) -> list[dict]:
     """Returns the list of distinct stages with company counts."""
-    result = await db.execute(
-        select(Company.stage, func.count(Company.id))
-        .where(Company.stage.isnot(None))
-        .group_by(Company.stage)
-        .order_by(func.count(Company.id).desc())
-    )
+    stmt = select(Company.stage, func.count(Company.id)).where(Company.stage.isnot(None))
+    if city:
+        stmt = stmt.where(Company.city == city)
+    stmt = stmt.group_by(Company.stage).order_by(func.count(Company.id).desc())
+    result = await db.execute(stmt)
     return [{"stage": row[0], "count": row[1]} for row in result.all()]
 
 
@@ -175,14 +175,26 @@ async def list_types(
 async def list_cities(
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> list[dict]:
-    """Returns the list of distinct cities with company counts."""
+    """Returns the list of distinct cities with company + hiring counts.
+
+    `hiring_count` is computed globally (not scoped to the current map
+    viewport) so the zoomed-out city cluster pins show an accurate hiring
+    badge for every city, not just whichever one happens to be selected.
+    """
+    hiring_company_ids = (
+        select(Job.company_id).where(Job.is_active.is_(True)).distinct().subquery()
+    )
     result = await db.execute(
-        select(Company.city, func.count(Company.id))
+        select(
+            Company.city,
+            func.count(Company.id),
+            func.count(case((Company.id.in_(select(hiring_company_ids.c.company_id)), 1))),
+        )
         .where(Company.city.isnot(None))
         .group_by(Company.city)
         .order_by(func.count(Company.id).desc())
     )
-    return [{"city": row[0], "count": row[1]} for row in result.all()]
+    return [{"city": row[0], "count": row[1], "hiring_count": row[2]} for row in result.all()]
 
 
 @router.get(
@@ -259,13 +271,16 @@ async def seed_company(
     company = existing.scalar_one_or_none()
 
     if company:
-        # Update existing company.
+        # Update existing company. Fields the payload doesn't carry are left
+        # untouched (`or company.X`) so a partial re-seed can't blank out data.
         company.description = payload.description or company.description
         company.sector = payload.sector or company.sector
+        company.stage = payload.stage or company.stage
         company.area = payload.area or company.area
         company.city = payload.city or company.city
         company.linkedin_url = payload.linkedin_url or company.linkedin_url
         company.jobs_url = payload.jobs_url or company.jobs_url
+        company.website_url = payload.website_url or company.website_url
         company.status = payload.status or company.status
         if payload.latitude and payload.longitude:
             company.location = from_shape(Point(payload.longitude, payload.latitude), srid=4326)

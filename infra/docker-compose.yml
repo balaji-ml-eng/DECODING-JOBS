@@ -50,6 +50,32 @@ services:
     networks:
       - decoding-jobs-net
 
+  # Opt-in: periodically re-runs the real-data fetcher so listings stay fresh.
+  # Start with: docker compose --profile refresh up -d
+  refresher:
+    image: node:20-alpine
+    container_name: decoding-jobs-refresher
+    profiles: ["refresh"]
+    working_dir: /scripts
+    env_file:
+      - ../scripts/.env
+    environment:
+      API_URL: http://core-api:8000
+    volumes:
+      - ../scripts:/scripts
+    entrypoint: >
+      sh -c "npm install --omit=dev &&
+      while true; do
+        node fetch-real-jobs.mjs --city=all --source=all;
+        echo 'Sleeping 6h until next refresh...';
+        sleep 21600;
+      done"
+    depends_on:
+      core-api:
+        condition: service_started
+    networks:
+      - decoding-jobs-net
+
 networks:
   decoding-jobs-net:
     driver: bridge
