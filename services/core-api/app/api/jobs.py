@@ -187,13 +187,17 @@ class JobSeedRequest(BaseModel):
     "/seed",
     response_model=JobRead,
     status_code=status.HTTP_201_CREATED,
-    summary="Seed a job posting from the scraper",
+    summary="Seed (or refresh) a job posting from the ingestion pipeline",
 )
 async def seed_job(
     payload: JobSeedRequest,
     db: Annotated[AsyncSession, Depends(get_db)],
 ) -> Job:
-    """Insert a job posting. Used by the LinkedIn scraper to populate real hiring data."""
+    """Insert a job posting, or — if it already exists — bump its `fetched_at` and
+    reactivate it. Upserting here (instead of 409-ing on conflict) matters for the
+    staleness sweep below: a posting that's still open keeps getting re-confirmed
+    by every ingestion run, so it must not look "unrefreshed" and get auto-expired.
+    """
     from datetime import datetime, timezone
 
     existing = await db.execute(
@@ -202,26 +206,65 @@ async def seed_job(
             Job.title == payload.title,
         )
     )
-    if existing.scalar_one_or_none():
-        raise HTTPException(
-            status_code=status.HTTP_409_CONFLICT,
-            detail=f"Job '{payload.title}' already exists for company {payload.company_id}",
-        )
+    job = existing.scalar_one_or_none()
 
-    job = Job(
-        company_id=payload.company_id,
-        title=payload.title,
-        description=payload.description or "No description provided.",
-        employment_type=EmploymentType(payload.employment_type),
-        work_mode=WorkMode(payload.work_mode) if payload.work_mode else None,
-        apply_url=payload.apply_url,
-        is_active=True,
-        source=payload.source,
-        source_url=payload.source_url,
-        fetched_at=datetime.now(timezone.utc),
-    )
-    db.add(job)
+    if job:
+        job.is_active = True
+        job.fetched_at = datetime.now(timezone.utc)
+        job.apply_url = payload.apply_url or job.apply_url
+        job.description = payload.description or job.description
+    else:
+        job = Job(
+            company_id=payload.company_id,
+            title=payload.title,
+            description=payload.description or "No description provided.",
+            employment_type=EmploymentType(payload.employment_type),
+            work_mode=WorkMode(payload.work_mode) if payload.work_mode else None,
+            apply_url=payload.apply_url,
+            is_active=True,
+            source=payload.source,
+            source_url=payload.source_url,
+            fetched_at=datetime.now(timezone.utc),
+        )
+        db.add(job)
+
     await db.commit()
     await db.refresh(job)
 
     return job
+
+
+@router.post(
+    "/expire-stale",
+    summary="Mark ingested jobs inactive if they haven't been re-confirmed by a recent run",
+)
+async def expire_stale_jobs(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    days: int = Query(21, ge=1, le=365, description="Inactivity threshold in days"),
+) -> dict:
+    """Flips `is_active=false` on jobs whose `fetched_at` is older than `days`.
+
+    Only touches pipeline-managed jobs (`fetched_at IS NOT NULL`) — statically
+    seeded demo jobs have no `fetched_at` and are never auto-expired, since
+    nothing ever re-confirms them. Intended to be called once per ingestion
+    run (see scripts/fetch-real-jobs.mjs) so listings that disappeared from
+    the source stop looking "live" instead of accumulating forever.
+    """
+    from datetime import datetime, timedelta, timezone
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=days)
+
+    result = await db.execute(
+        select(Job).where(
+            Job.is_active.is_(True),
+            Job.fetched_at.isnot(None),
+            Job.fetched_at < cutoff,
+        )
+    )
+    stale_jobs = list(result.scalars().all())
+    for job in stale_jobs:
+        job.is_active = False
+
+    await db.commit()
+
+    return {"expired_count": len(stale_jobs), "threshold_days": days}

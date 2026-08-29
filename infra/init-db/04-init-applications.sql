@@ -6,8 +6,8 @@
 -- ============================================================================
 
 -- 1. Enum backing app.models.domain.ApplicationStatus. Guarded for idempotent
---    re-runs. Only 'applied' is used by Phase 1's submit flow; the rest are
---    reserved for the Phase 2 Kanban tracker.
+--    re-runs. 'saved' is added later, in 11-add-application-tracker.sql, for
+--    the Kanban tracker's Saved column.
 DO $$
 BEGIN
     CREATE TYPE application_status AS ENUM ('applied', 'viewed', 'interview', 'rejected', 'offer');
@@ -15,8 +15,9 @@ EXCEPTION
     WHEN duplicate_object THEN NULL;
 END $$;
 
--- 2. Applications — one row per submit. `user_id` is nullable: Phase 1 has
---    no auth/session system yet, so submissions are currently anonymous.
+-- 2. Applications — one row per submit. `user_id` is nullable: submitting
+--    without a stored tracker email (see 11-add-application-tracker.sql)
+--    stays anonymous, same as before the tracker existed.
 CREATE TABLE IF NOT EXISTS applications (
     id                  BIGSERIAL PRIMARY KEY,
     job_id              BIGINT NOT NULL REFERENCES jobs(id) ON DELETE CASCADE,

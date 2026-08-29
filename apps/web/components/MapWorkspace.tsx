@@ -98,6 +98,11 @@ const CITY_CENTERS: Record<string, CityConfig> = {
   Thiruvananthapuram: { longitude: 76.9366, latitude: 8.5241, zoom: 12 },
   Madurai: { longitude: 78.1198, latitude: 9.9252, zoom: 13 },
   Kozhikode: { longitude: 75.7873, latitude: 11.2588, zoom: 13 },
+  Mumbai: { longitude: 72.8777, latitude: 19.076, zoom: 11 },
+  Pune: { longitude: 73.8567, latitude: 18.5204, zoom: 11 },
+  "Delhi NCR": { longitude: 77.0266, latitude: 28.4595, zoom: 10 },
+  Kolkata: { longitude: 88.3639, latitude: 22.5726, zoom: 11 },
+  Ahmedabad: { longitude: 72.5714, latitude: 23.0225, zoom: 11 },
 };
 
 function getCityCenter(city: string): CityConfig {
@@ -332,7 +337,9 @@ const CompanyPin = React.memo(function CompanyPin({
 });
 
 // ---------------------------------------------------------------------------
-// City-level pin — premium location marker with count badge
+// City-level cluster — a single glass pill combining location, name, company
+// count, and hiring signal. Scales gently with cluster size and lifts on
+// hover/select, echoing the pulse-glow language used by CompanyPin.
 const CityPin = React.memo(function CityPin({
   cityName, count, hiringCount, isSelected, isHovered, onClick, onHover, onLeave,
 }: {
@@ -343,120 +350,114 @@ const CityPin = React.memo(function CityPin({
   const hasHiring = hiringCount > 0;
   const isActive = isSelected || isHovered;
 
+  // Larger clusters read as gently larger pills (capped so mega-cities don't dominate).
+  const sizeScale = Math.min(Math.max(count, 1), 200) / 200;
+  const scaleFactor = (isActive ? 1.08 : 1) * (1 + sizeScale * 0.12);
+
   return (
     <div
       className="flex flex-col items-center cursor-pointer"
       style={{
         zIndex: isActive ? 200 : 50,
-        filter: isActive
-          ? "drop-shadow(0 6px 24px rgba(22,163,74,0.45))"
-          : "drop-shadow(0 3px 10px rgba(0,0,0,0.25))",
-        transition: "filter 0.3s ease, transform 0.3s cubic-bezier(0.34,1.56,0.64,1)",
-        transform: isActive ? "scale(1.1)" : "scale(1)",
+        transform: `scale(${scaleFactor})`,
+        transition: "transform 0.35s cubic-bezier(0.34,1.56,0.64,1)",
       }}
       onClick={onClick}
       onMouseEnter={onHover}
       onMouseLeave={onLeave}
     >
-      {/* Location pin SVG */}
       <div className="relative">
-        {/* Animated ring for hiring */}
-        {hasHiring && !isActive && (
-          <div className="absolute" style={{
-            top: -6, left: -6, width: 60, height: 60,
-            borderRadius: "50%",
-            border: "2px solid #22c55e",
-            animation: "ping 2.5s cubic-bezier(0,0,0.2,1) infinite",
-            opacity: 0.3,
-          }} />
-        )}
-
-        <svg
-          width={isActive ? 52 : 44}
-          height={isActive ? 64 : 56}
-          viewBox="0 0 44 56"
-          fill="none"
-          xmlns="http://www.w3.org/2000/svg"
-          style={{ transition: "all 0.3s cubic-bezier(0.34,1.56,0.64,1)" }}
-        >
-          {/* Pin shadow */}
-          <ellipse cx="22" cy="52" rx="10" ry="3" fill="rgba(0,0,0,0.12)" />
-          
-          {/* Pin body */}
-          <path
-            d="M22 2C13.16 2 6 9.16 6 18c0 12 16 32 16 32s16-20 16-32C38 9.16 30.84 2 22 2z"
-            fill={hasHiring ? "url(#pinGreen)" : "url(#pinDark)"}
-            stroke={isActive ? "#ffffff" : "rgba(255,255,255,0.3)"}
-            strokeWidth={isActive ? 2 : 1}
-          />
-          
-          {/* Inner circle (count area) */}
-          <circle cx="22" cy="18" r="13" fill="white" opacity="0.95" />
-          
-          {/* Count text */}
-          <text
-            x="22"
-            y="19"
-            textAnchor="middle"
-            dominantBaseline="middle"
-            fontSize={count > 99 ? "11" : "13"}
-            fontWeight="800"
-            fontFamily="system-ui, -apple-system, sans-serif"
-            fill={hasHiring ? "#16a34a" : "#1e293b"}
-          >
-            {count}
-          </text>
-
-          {/* Gradient defs */}
-          <defs>
-            <linearGradient id="pinGreen" x1="22" y1="2" x2="22" y2="50" gradientUnits="userSpaceOnUse">
-              <stop stopColor="#22c55e" />
-              <stop offset="0.5" stopColor="#16a34a" />
-              <stop offset="1" stopColor="#059669" />
-            </linearGradient>
-            <linearGradient id="pinDark" x1="22" y1="2" x2="22" y2="50" gradientUnits="userSpaceOnUse">
-              <stop stopColor="#475569" />
-              <stop offset="0.5" stopColor="#334155" />
-              <stop offset="1" stopColor="#1e293b" />
-            </linearGradient>
-          </defs>
-        </svg>
-
-        {/* Hiring count badge */}
+        {/* Hiring: soft double pulse ring, matching CompanyPin */}
         {hasHiring && (
-          <div
-            className="absolute flex items-center justify-center rounded-full bg-green-500 text-white font-bold"
-            style={{
-              width: 20, height: 20,
-              top: -2, right: -8,
-              fontSize: 9,
-              border: "2px solid white",
-              boxShadow: "0 2px 6px rgba(34,197,94,0.4)",
-            }}
-          >
-            {hiringCount}
-          </div>
+          <>
+            <div
+              className="absolute inset-0 rounded-full"
+              style={{
+                border: "2px solid #22c55e",
+                animation: "ping 2.2s cubic-bezier(0,0,0.2,1) infinite",
+                opacity: 0.3,
+                margin: "-8px",
+              }}
+            />
+            <div
+              className="absolute inset-0 rounded-full"
+              style={{
+                border: "2px solid #22c55e",
+                animation: "ping 2.2s cubic-bezier(0,0,0.2,1) infinite 0.7s",
+                opacity: 0.18,
+                margin: "-8px",
+              }}
+            />
+          </>
         )}
-      </div>
 
-      {/* Floating name pill */}
-      <div
-        className="mt-0.5 whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-bold shadow-lg"
-        style={{
-          background: isActive
-            ? "linear-gradient(135deg, #16a34a 0%, #059669 100%)"
-            : "rgba(255,255,255,0.95)",
-          color: isActive ? "white" : "#1f2937",
-          backdropFilter: "blur(8px)",
-          border: isActive ? "none" : "1px solid rgba(0,0,0,0.06)",
-          transition: "all 0.3s ease",
-        }}
-      >
-        {cityName}
+        <div
+          className="flex items-center gap-2 rounded-full py-2 pl-2.5 pr-3.5 transition-all duration-300"
+          style={{
+            background: hasHiring
+              ? "linear-gradient(135deg, #16a34a 0%, #059669 100%)"
+              : "linear-gradient(135deg, #1e293b 0%, #334155 100%)",
+            boxShadow: isActive
+              ? hasHiring
+                ? "0 10px 32px -4px rgba(22,163,74,0.5), 0 0 0 3px rgba(255,255,255,0.9)"
+                : "0 10px 32px -4px rgba(15,23,42,0.4), 0 0 0 3px rgba(255,255,255,0.9)"
+              : "0 4px 16px -2px rgba(0,0,0,0.25)",
+            border: "1.5px solid rgba(255,255,255,0.25)",
+          }}
+        >
+          {/* Icon medallion */}
+          <span
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/15 backdrop-blur-sm"
+            style={{ boxShadow: "inset 0 1px 2px rgba(255,255,255,0.2)" }}
+          >
+            <MapPinned className="h-3.5 w-3.5 text-white" />
+          </span>
+
+          {/* City name + count */}
+          <div className="flex flex-col leading-tight">
+            <span className="whitespace-nowrap text-[12px] font-bold text-white">{cityName}</span>
+            <span className="whitespace-nowrap text-[10px] font-semibold text-white/75">
+              {count} {count === 1 ? "company" : "companies"}
+            </span>
+          </div>
+
+          {/* Hiring badge */}
+          {hasHiring && (
+            <span
+              className="ml-0.5 flex shrink-0 items-center gap-1 rounded-full bg-white/20 px-2 py-1 text-[10px] font-extrabold text-white backdrop-blur-sm"
+            >
+              <Briefcase className="h-2.5 w-2.5" />
+              {hiringCount}
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
 });
+
+// ---------------------------------------------------------------------------
+// Small filter-panel helpers — active-filter chip and empty-facet hint.
+// ---------------------------------------------------------------------------
+
+function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
+  return (
+    <span className="flex items-center gap-1 rounded-full bg-gradient-to-r from-green-500 to-emerald-600 py-1 pl-2.5 pr-1.5 text-[10px] font-bold text-white shadow-sm shadow-green-500/20">
+      {label}
+      <button
+        type="button"
+        onClick={onRemove}
+        className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white/20 transition-colors hover:bg-white/35"
+      >
+        <X className="h-2 w-2" />
+      </button>
+    </span>
+  );
+}
+
+function EmptyFacetHint({ text }: { text: string }) {
+  return <p className="px-2.5 py-1.5 text-[11px] text-gray-300">{text}</p>;
+}
 
 // --- Main Component
 export function MapWorkspace() {
@@ -473,6 +474,7 @@ export function MapWorkspace() {
   const [selectedCity, setSelectedCity] = useState("Bengaluru");
   const [cityDropdownOpen, setCityDropdownOpen] = useState(false);
   const [hiringOnly, setHiringOnly] = useState(false);
+  const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const isFirstRender = useRef(true);
   const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [zoom, setZoom] = useState(6);
@@ -480,9 +482,9 @@ export function MapWorkspace() {
   const selectedCompanyId = useMapSelectionStore((s) => s.selectedCompanyId);
   const setSelectedCompanyId = useMapSelectionStore((s) => s.setSelectedCompanyId);
 
-  const { data: sectors } = useQuery({ queryKey: ["sectors"], queryFn: getSectors });
+  const { data: sectors } = useQuery({ queryKey: ["sectors", selectedCity], queryFn: () => getSectors(selectedCity) });
   const { data: cities } = useQuery({ queryKey: ["cities"], queryFn: getCities });
-  const { data: stages } = useQuery({ queryKey: ["stages"], queryFn: getStages });
+  const { data: stages } = useQuery({ queryKey: ["stages", selectedCity], queryFn: () => getStages(selectedCity) });
   const { data: areas } = useQuery({ queryKey: ["areas", selectedCity], queryFn: () => getAreas(selectedCity) });
   const { data: types } = useQuery({ queryKey: ["types", selectedCity], queryFn: () => getTypes(selectedCity) });
 
@@ -521,6 +523,9 @@ export function MapWorkspace() {
     if (isFirstRender.current) { isFirstRender.current = false; return; }
     const c = getCityCenter(selectedCity);
     mapRef.current?.flyTo({ center: [c.longitude, c.latitude], zoom: c.zoom, duration: 800 });
+    // Area values are city-specific ("Koramangala" only exists in Bengaluru) —
+    // carrying a stale selection across a city switch silently zeroes results.
+    setSelectedArea(null);
   }, [selectedCity]);
 
   const { data: companies, isLoading, isError } = useQuery({
@@ -598,6 +603,16 @@ export function MapWorkspace() {
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
+  // Active facet filters (Type/Stage/Area/Sector) — city + hiring toggle have
+  // their own dedicated controls, so they're not counted as "filters" here.
+  const activeFilterCount = [selectedType, selectedStage, selectedArea, selectedSector].filter(Boolean).length;
+  const clearAllFilters = useCallback(() => {
+    setSelectedType(null);
+    setSelectedStage(null);
+    setSelectedArea(null);
+    setSelectedSector(null);
+  }, []);
+
   // Get company IDs that match job search
   const jobSearchCompanyIds = useMemo(() => {
     if (!jobSearchResults || !searchQuery) return null;
@@ -619,14 +634,6 @@ export function MapWorkspace() {
   const isOverviewMode = zoom < 8;
   const { data: allCities } = useQuery({ queryKey: ["cities"], queryFn: getCities });
   const showCityPins = !filteredCompanies || filteredCompanies.length === 0 || isOverviewMode;
-  const cityHiringCounts = useMemo(() => {
-    if (!filteredCompanies) return {};
-    const map: Record<string, number> = {};
-    for (const c of filteredCompanies) {
-      if (c.active_job_count > 0 && c.city) map[c.city] = (map[c.city] || 0) + 1;
-    }
-    return map;
-  }, [filteredCompanies]);
 
   const initialCenter = getCityCenter("Bengaluru");
 
@@ -681,7 +688,7 @@ export function MapWorkspace() {
               <CityPin
                 cityName={cityInfo.city}
                 count={cityInfo.count}
-                hiringCount={cityHiringCounts[cityInfo.city] || 0}
+                hiringCount={cityInfo.hiring_count}
                 isSelected={selectedCity === cityInfo.city}
                 isHovered={false}
                 onClick={() => {
@@ -725,26 +732,29 @@ export function MapWorkspace() {
       </Map>
 
       {/* ── Top toolbar ── */}
-      <div className="absolute left-4 right-4 top-4 flex items-center gap-2">
+      <div className="absolute left-4 right-4 top-4 flex flex-wrap items-center gap-2">
         {/* Search with autocomplete */}
-        <div className="relative flex-1 max-w-sm" ref={searchRef}>
+        <div className="relative min-w-[180px] flex-1 sm:max-w-sm" ref={searchRef}>
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-green-400 z-10" />
           <Input
             value={searchValue}
             onChange={(e) => handleSearchInput(e.target.value)}
             onFocus={() => searchValue.length >= 2 && setShowSuggestions(true)}
             placeholder="Search job roles — Frontend Engineer, Data Scientist..."
-            className="h-10 rounded-xl border-green-100 bg-white pl-9 pr-9 text-sm shadow-lg focus:ring-2 focus:ring-green-400/30"
+            className="h-11 rounded-2xl border-gray-100 bg-white/95 pl-9 pr-9 text-sm shadow-[0_2px_12px_rgba(15,23,42,0.08)] backdrop-blur-sm transition-all duration-200 placeholder:text-gray-400 focus:border-green-200 focus:shadow-[0_4px_20px_rgba(34,197,94,0.15)] focus:ring-4 focus:ring-green-400/15"
           />
           {searchValue && (
-            <button onClick={clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 z-10">
+            <button onClick={clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 z-10">
               <X className="h-3.5 w-3.5" />
             </button>
           )}
 
           {/* Autocomplete dropdown */}
           {showSuggestions && suggestions && suggestions.length > 0 && (
-            <div className="absolute left-0 right-0 top-full z-50 mt-1.5 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-xl">
+            <div
+              className="absolute left-0 right-0 top-full z-50 mt-2 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.14)]"
+              style={{ animation: "fadeSlideUp 0.15s ease-out" }}
+            >
               {suggestions.map((s, i) => (
                 <button
                   key={i}
@@ -763,9 +773,13 @@ export function MapWorkspace() {
 
           {/* Job search results dropdown */}
           {searchQuery && jobSearchResults && jobSearchResults.length > 0 && (
-            <div className="absolute left-0 right-0 top-full z-50 mt-1.5 max-h-80 overflow-y-auto rounded-xl border border-gray-100 bg-white shadow-xl">
-              <div className="sticky top-0 border-b border-gray-100 bg-green-50/50 px-3.5 py-2">
-                <span className="text-[10px] font-bold uppercase tracking-wider text-green-600">{jobSearchResults.length} companies hiring</span>
+            <div
+              className="absolute left-0 right-0 top-full z-50 mt-2 max-h-80 overflow-y-auto rounded-2xl border border-gray-100 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.14)]"
+              style={{ animation: "fadeSlideUp 0.15s ease-out" }}
+            >
+              <div className="sticky top-0 flex items-center gap-1.5 border-b border-gray-100 bg-gradient-to-r from-green-50 to-emerald-50/50 px-3.5 py-2.5">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-green-700">{jobSearchResults.length} companies hiring</span>
               </div>
               {jobSearchResults.map((r) => (
                 <button
@@ -777,9 +791,9 @@ export function MapWorkspace() {
                     }
                     setShowSuggestions(false);
                   }}
-                  className="flex w-full items-start gap-3 px-3.5 py-3 text-left transition-colors hover:bg-green-50 border-b border-gray-50 last:border-0"
+                  className="flex w-full items-start gap-3 px-3.5 py-3 text-left transition-colors hover:bg-green-50/70 border-b border-gray-50 last:border-0"
                 >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-green-100 text-[11px] font-bold text-green-700">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-green-100 to-emerald-100 text-[11px] font-bold text-green-700 shadow-sm">
                     {getInitials(r.company_name)}
                   </div>
                   <div className="min-w-0 flex-1">
@@ -813,9 +827,13 @@ export function MapWorkspace() {
           )}
 
           {searchQuery && jobSearchResults && jobSearchResults.length === 0 && (
-            <div className="absolute left-0 right-0 top-full z-50 mt-1.5 rounded-xl border border-gray-100 bg-white p-4 shadow-xl text-center">
-              <p className="text-xs text-gray-400">No jobs found for "{searchQuery}"</p>
-              <p className="mt-1 text-[10px] text-gray-300">Try a different role or skill</p>
+            <div
+              className="absolute left-0 right-0 top-full z-50 mt-2 rounded-2xl border border-gray-100 bg-white p-5 text-center shadow-[0_12px_40px_rgba(15,23,42,0.14)]"
+              style={{ animation: "fadeSlideUp 0.15s ease-out" }}
+            >
+              <Search className="mx-auto h-5 w-5 text-gray-200" />
+              <p className="mt-2 text-xs font-medium text-gray-500">No jobs found for "{searchQuery}"</p>
+              <p className="mt-0.5 text-[10px] text-gray-400">Try a different role or skill</p>
             </div>
           )}
         </div>
@@ -894,19 +912,34 @@ export function MapWorkspace() {
           {hiringOnly ? "Hiring" : "All"}
         </button>
 
+        {/* Mobile filters toggle — the always-visible left panel becomes a
+            bottom sheet below `md`, opened from here. */}
+        <button
+          type="button"
+          onClick={() => setMobileFiltersOpen(true)}
+          className="flex items-center gap-1.5 rounded-xl bg-white px-3.5 py-2 text-sm font-semibold text-gray-600 shadow-lg transition-all hover:bg-green-50 hover:text-green-700 md:hidden"
+        >
+          <Filter className="h-4 w-4" />
+          {activeFilterCount > 0 && (
+            <span className="rounded-full bg-green-500 px-1.5 py-0.5 text-[9px] font-bold text-white">
+              {activeFilterCount}
+            </span>
+          )}
+        </button>
+
         {/* Status */}
         {isLoading && (
-          <div className="flex items-center gap-1.5 rounded-xl bg-white px-3 py-2 text-xs font-medium text-gray-500 shadow-lg">
+          <div className="hidden items-center gap-1.5 rounded-xl bg-white px-3 py-2 text-xs font-medium text-gray-500 shadow-lg sm:flex">
             <Loader2 className="h-3.5 w-3.5 animate-spin text-green-500" /> Loading…
           </div>
         )}
         {isError && (
-          <div className="flex items-center gap-1.5 rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-500 shadow-lg">
+          <div className="hidden items-center gap-1.5 rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-500 shadow-lg sm:flex">
             <AlertTriangle className="h-3.5 w-3.5" /> Error
           </div>
         )}
         {!isLoading && !isError && filteredCompanies && (
-          <div className="flex items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-xs font-semibold shadow-lg">
+          <div className="hidden items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-xs font-semibold shadow-lg sm:flex">
             {searchQuery && (
               <span className="rounded-md bg-green-100 px-1.5 py-0.5 text-[9px] font-bold text-green-700">
                 "{searchQuery}"
@@ -955,17 +988,68 @@ export function MapWorkspace() {
       </div>
 
       {/* ── Filter panel ── */}
+      {/* Mobile backdrop — the panel becomes a bottom sheet below `md`. */}
+      {mobileFiltersOpen && (
+        <div
+          className="fixed inset-0 z-40 bg-black/30 md:hidden"
+          onClick={() => setMobileFiltersOpen(false)}
+        />
+      )}
       <div
-        className="absolute left-4 top-20 w-52 max-h-[calc(100%-100px)] overflow-y-auto rounded-2xl bg-white shadow-xl"
+        className={cn(
+          "z-50 overflow-y-auto rounded-2xl border border-gray-100 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.12)]",
+          "fixed inset-x-3 bottom-3 max-h-[75vh]",
+          "md:absolute md:inset-x-auto md:bottom-auto md:left-4 md:top-20 md:z-30 md:w-56 md:max-h-[calc(100%-100px)] md:block",
+          mobileFiltersOpen ? "block" : "hidden"
+        )}
         style={{ animation: "fadeSlideUp 0.3s ease-out" }}
       >
         {/* Header */}
-        <div className="flex items-center gap-2 border-b border-green-50 px-4 py-3">
-          <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-green-100">
+        <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-green-50 bg-white/95 px-4 py-3 backdrop-blur-sm">
+          <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-gradient-to-br from-green-100 to-emerald-100">
             <Filter className="h-3.5 w-3.5 text-green-600" />
           </div>
           <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Filters</h3>
+          {activeFilterCount > 0 && (
+            <span className="rounded-full bg-green-500 px-1.5 py-0.5 text-[9px] font-bold text-white">
+              {activeFilterCount}
+            </span>
+          )}
+          {activeFilterCount > 0 && (
+            <button
+              type="button"
+              onClick={clearAllFilters}
+              className="ml-auto text-[10px] font-semibold text-gray-400 transition-colors hover:text-red-500"
+            >
+              Clear all
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => setMobileFiltersOpen(false)}
+            className={cn("shrink-0 rounded-full bg-gray-100 p-1 text-gray-500 md:hidden", activeFilterCount === 0 && "ml-auto")}
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
+
+        {/* Active filter chips */}
+        {activeFilterCount > 0 && (
+          <div className="flex flex-wrap gap-1.5 border-b border-gray-50 px-3 py-2.5">
+            {selectedType && (
+              <FilterChip label={selectedType} onRemove={() => setSelectedType(null)} />
+            )}
+            {selectedStage && (
+              <FilterChip label={selectedStage} onRemove={() => setSelectedStage(null)} />
+            )}
+            {selectedArea && (
+              <FilterChip label={selectedArea} onRemove={() => setSelectedArea(null)} />
+            )}
+            {selectedSector && (
+              <FilterChip label={selectedSector} onRemove={() => setSelectedSector(null)} />
+            )}
+          </div>
+        )}
 
         {/* Type */}
         <div className="px-3 pb-2 pt-3">
@@ -1001,6 +1085,13 @@ export function MapWorkspace() {
         <div className="px-3 py-3">
           <span className="px-1 text-[10px] font-bold uppercase tracking-widest text-green-500">Stage</span>
           <div className="mt-1.5 flex flex-col gap-0.5">
+            <button type="button" onClick={() => setSelectedStage(null)}
+              className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-[13px] transition-all",
+                selectedStage === null ? "bg-gradient-to-r from-green-500 to-emerald-600 font-semibold text-white shadow-md shadow-green-500/20" : "text-gray-600 hover:bg-green-50 hover:text-green-700"
+              )}>
+              <Blocks className="h-3.5 w-3.5" />
+              All stages
+            </button>
             {stages?.map((s) => {
               const Icon = s.stage === "Seed" ? Sprout : s.stage.startsWith("Series") ? CircleDollarSign : s.stage === "Growth" ? TrendingUp : Landmark;
               return (
@@ -1016,6 +1107,7 @@ export function MapWorkspace() {
                 </button>
               );
             })}
+            {stages?.length === 0 && <EmptyFacetHint text="No stage data for this city yet" />}
           </div>
         </div>
         <div className="mx-3 h-px bg-gray-100" />
@@ -1036,6 +1128,7 @@ export function MapWorkspace() {
                 )}>{a.count}</span>
               </button>
             ))}
+            {areas?.length === 0 && <EmptyFacetHint text="No area data for this city yet" />}
           </div>
         </div>
         <div className="mx-3 h-px bg-gray-100" />
@@ -1067,6 +1160,7 @@ export function MapWorkspace() {
                 </button>
               );
             })}
+            {sectors?.length === 0 && <EmptyFacetHint text="No sector data for this city yet" />}
           </div>
         </div>
       </div>

@@ -10,7 +10,7 @@ from fastapi.requests import Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 
-from app.api import applications, companies, jobs
+from app.api import applications, companies, emails, jobs, logos, users
 from app.core.config import get_settings
 from app.db.session import engine
 
@@ -51,6 +51,9 @@ app.add_middleware(
 app.include_router(companies.router, prefix=settings.API_V1_PREFIX)
 app.include_router(jobs.router, prefix=settings.API_V1_PREFIX)
 app.include_router(applications.router, prefix=settings.API_V1_PREFIX)
+app.include_router(users.router, prefix=settings.API_V1_PREFIX)
+app.include_router(emails.router, prefix=settings.API_V1_PREFIX)
+app.include_router(logos.router, prefix=settings.API_V1_PREFIX)
 
 
 @app.exception_handler(Exception)

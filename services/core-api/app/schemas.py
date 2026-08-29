@@ -111,6 +111,32 @@ class ApplicationSubmitRequest(BaseModel):
 
     job_id: int
     resume_filename: str = Field(..., min_length=1, max_length=255)
+    user_email: str | None = Field(None, description="Ties the application to a tracker board")
+
+
+class ApplicationSaveRequest(BaseModel):
+    """Body for POST /applications/save — bookmark a job into the tracker's Saved column."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: int
+    user_email: str = Field(..., min_length=3, max_length=320)
+
+
+class ApplicationStatusUpdate(BaseModel):
+    """Body for PATCH /applications/{id}/status — a Kanban column drop."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    status: ApplicationStatus
+
+
+class ApplicationRoundUpdate(BaseModel):
+    """Body for PATCH /applications/{id}/round — advancing/setting the interview round."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    interview_round: int = Field(..., ge=1)
 
 
 class ApplicationRead(BaseModel):
@@ -121,6 +147,69 @@ class ApplicationRead(BaseModel):
     id: int
     job_id: int
     user_id: int | None = None
-    resume_filename: str
+    resume_filename: str | None = None
     status: ApplicationStatus
+    interview_round: int | None = None
     applied_at: datetime
+
+
+class ApplicationBoardRead(ApplicationRead):
+    """An Application with its Job (and that Job's Company) embedded — one Kanban card."""
+
+    job: JobWithCompanyRead
+    auto_tracked: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_auto_tracked(cls, data: "ApplicationBoardRead") -> "ApplicationBoardRead":
+        """Pulls the _auto_tracked attribute set by the API route onto the response."""
+        if hasattr(data, "_auto_tracked"):
+            data.auto_tracked = data._auto_tracked
+        elif isinstance(data, dict) and "_auto_tracked" in data:
+            data["auto_tracked"] = data.pop("_auto_tracked")
+        return data
+
+
+class UserIdentifyRequest(BaseModel):
+    """Body for POST /users/identify — Phase 1's password-less sign-in."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    email: str = Field(..., min_length=3, max_length=320)
+
+
+class UserRead(BaseModel):
+    """API representation of a User."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    email: str
+    forwarding_token: str | None = None
+    forwarding_address: str | None = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def extract_forwarding_address(cls, data: "UserRead") -> "UserRead":
+        """Pulls the _forwarding_address attribute set by the API route onto the response."""
+        if hasattr(data, "_forwarding_address"):
+            data.forwarding_address = data._forwarding_address
+        elif isinstance(data, dict) and "_forwarding_address" in data:
+            data["forwarding_address"] = data.pop("_forwarding_address")
+        return data
+
+
+class EmailEventRead(BaseModel):
+    """API representation of an EmailEvent — an unmatched-emails audit entry."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    from_address: str | None = None
+    subject: str | None = None
+    extracted_company: str | None = None
+    extracted_round: int | None = None
+    extracted_stage_label: str | None = None
+    extracted_status: str | None = None
+    matched: bool
+    created_at: datetime

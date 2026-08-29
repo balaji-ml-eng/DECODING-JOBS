@@ -23,6 +23,7 @@ from sqlalchemy import (
 )
 from sqlalchemy import (
     ForeignKey,
+    LargeBinary,
     Numeric,
     SmallInteger,
     String,
@@ -55,12 +56,14 @@ class WorkMode(str, enum.Enum):
 
 
 class ApplicationStatus(str, enum.Enum):
-    """Mirrors the Postgres `application_status` enum created in 04-init-applications.sql.
+    """Mirrors the Postgres `application_status` enum (created in 04-init-applications.sql,
+    with SAVED added in 11-add-application-tracker.sql for the Kanban tracker).
 
-    Only APPLIED is used by Phase 1's submit flow; the rest are reserved for
-    the Phase 2 Kanban tracker.
+    SAVED/APPLIED/INTERVIEW/OFFER back the tracker's Kanban columns; VIEWED
+    and REJECTED are tracked but not yet surfaced as their own column.
     """
 
+    SAVED = "saved"
     APPLIED = "applied"
     VIEWED = "viewed"
     INTERVIEW = "interview"
@@ -200,7 +203,8 @@ class Application(Base):
         ForeignKey("users.id", ondelete="SET NULL"),
         nullable=True,
     )
-    resume_filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    # NULL for a "saved" bookmark that hasn't gone through 1-Click Apply yet.
+    resume_filename: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[ApplicationStatus] = mapped_column(
         SAEnum(
             ApplicationStatus,
@@ -210,6 +214,9 @@ class Application(Base):
         nullable=False,
         default=ApplicationStatus.APPLIED,
     )
+    # Which interview round the candidate is on. NULL until the card first
+    # enters INTERVIEW; set to 1 at that point and bumped from the board.
+    interview_round: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
     applied_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -231,7 +238,11 @@ class User(Base):
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
     email: Mapped[str] = mapped_column(String(320), nullable=False, unique=True, index=True)
     full_name: Mapped[str] = mapped_column(String(255), nullable=False)
-    hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
+    # Phase 1 identity is email-only (no login) — see api/users.py `identify`.
+    hashed_password: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Local-part of this user's personal inbound-email address
+    # (u-{forwarding_token}@{INBOUND_EMAIL_DOMAIN}) — see api/emails.py.
+    forwarding_token: Mapped[str | None] = mapped_column(String(32), unique=True, nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
@@ -241,4 +252,50 @@ class User(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
+    )
+
+
+class EmailEvent(Base):
+    """Audit trail of one inbound email the parser has seen, matched or not.
+
+    Created by the SendGrid Inbound Parse webhook in api/emails.py.
+    """
+
+    __tablename__ = "email_events"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    application_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("applications.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    from_address: Mapped[str | None] = mapped_column(Text, nullable=True)
+    subject: Mapped[str | None] = mapped_column(Text, nullable=True)
+    raw_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    extracted_company: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    extracted_round: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    extracted_stage_label: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    extracted_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    matched: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+
+class LogoCache(Base):
+    """A cached company favicon, keyed by domain.
+
+    Durable (Postgres-backed) so it survives a frontend restart/redeploy and
+    is shared across every instance — see api/logos.py and
+    apps/web/app/api/logo/route.ts.
+    """
+
+    __tablename__ = "logo_cache"
+
+    domain: Mapped[str] = mapped_column(String(255), primary_key=True)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    image_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    fetched_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
     )

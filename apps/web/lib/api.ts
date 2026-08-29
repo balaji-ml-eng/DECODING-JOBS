@@ -52,15 +52,23 @@ export interface Job {
   created_at: string;
 }
 
-export type ApplicationStatus = "applied" | "viewed" | "interview" | "rejected" | "offer";
+export type ApplicationStatus = "saved" | "applied" | "viewed" | "interview" | "rejected" | "offer";
 
 export interface Application {
   id: number;
   job_id: number;
   user_id: number | null;
-  resume_filename: string;
+  resume_filename: string | null;
   status: ApplicationStatus;
+  interview_round: number | null;
   applied_at: string;
+}
+
+/** A Kanban card: an Application with its Job (and that Job's Company) embedded. */
+export interface ApplicationBoardCard extends Application {
+  job: Job & { company: Company };
+  /** True if an inbound forwarded email (not a manual click) last updated this card. */
+  auto_tracked: boolean;
 }
 
 export interface BoundingBox {
@@ -96,6 +104,20 @@ async function postJson<T>(path: string, body: unknown): Promise<T> {
   return response.json() as Promise<T>;
 }
 
+async function patchJson<T>(path: string, body: unknown): Promise<T> {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  if (!response.ok) {
+    throw new Error(`Request to ${path} failed (${response.status})`);
+  }
+
+  return response.json() as Promise<T>;
+}
+
 /** Matches GET /api/v1/companies/search on services/core-api. */
 export async function searchCompaniesInBoundingBox(
   bbox: BoundingBox,
@@ -119,13 +141,15 @@ export async function searchCompaniesInBoundingBox(
 }
 
 /** Matches GET /api/v1/companies/sectors on services/core-api. */
-export async function getSectors(): Promise<{ sector: string; count: number }[]> {
-  return fetchJson<{ sector: string; count: number }[]>(`/api/v1/companies/sectors`);
+export async function getSectors(city?: string): Promise<{ sector: string; count: number }[]> {
+  const params = city ? `?city=${encodeURIComponent(city)}` : "";
+  return fetchJson<{ sector: string; count: number }[]>(`/api/v1/companies/sectors${params}`);
 }
 
 /** Matches GET /api/v1/companies/stages on services/core-api. */
-export async function getStages(): Promise<{ stage: string; count: number }[]> {
-  return fetchJson<{ stage: string; count: number }[]>(`/api/v1/companies/stages`);
+export async function getStages(city?: string): Promise<{ stage: string; count: number }[]> {
+  const params = city ? `?city=${encodeURIComponent(city)}` : "";
+  return fetchJson<{ stage: string; count: number }[]>(`/api/v1/companies/stages${params}`);
 }
 
 /** Matches GET /api/v1/companies/areas on services/core-api. */
@@ -141,8 +165,8 @@ export async function getTypes(city?: string): Promise<{ type: string; count: nu
 }
 
 /** Matches GET /api/v1/companies/cities on services/core-api. */
-export async function getCities(): Promise<{ city: string; count: number }[]> {
-  return fetchJson<{ city: string; count: number }[]>(`/api/v1/companies/cities`);
+export async function getCities(): Promise<{ city: string; count: number; hiring_count: number }[]> {
+  return fetchJson<{ city: string; count: number; hiring_count: number }[]>(`/api/v1/companies/cities`);
 }
 
 /** Matches GET /api/v1/companies/{company_id} on services/core-api. */
@@ -201,9 +225,58 @@ export async function getJobSuggestions(
 export async function submitApplication(params: {
   jobId: number;
   resumeFilename: string;
+  userEmail?: string | null;
 }): Promise<Application> {
   return postJson<Application>("/api/v1/applications/submit", {
     job_id: params.jobId,
     resume_filename: params.resumeFilename,
+    user_email: params.userEmail || undefined,
+  });
+}
+
+export interface IdentifyResult {
+  id: number;
+  email: string;
+  forwarding_token: string | null;
+  /** u-{token}@{domain}, or null if email auto-tracking isn't configured yet. */
+  forwarding_address: string | null;
+}
+
+/** Matches POST /api/v1/users/identify on services/core-api — Phase 1's password-less sign-in. */
+export async function identify(email: string): Promise<IdentifyResult> {
+  return postJson<IdentifyResult>("/api/v1/users/identify", { email });
+}
+
+/** Matches GET /api/v1/applications/board on services/core-api — the Kanban tracker's cards. */
+export async function getApplicationBoard(email: string): Promise<ApplicationBoardCard[]> {
+  const params = new URLSearchParams({ email });
+  return fetchJson<ApplicationBoardCard[]>(`/api/v1/applications/board?${params.toString()}`);
+}
+
+/** Matches POST /api/v1/applications/save on services/core-api — bookmark a job pre-application. */
+export async function saveJob(params: { jobId: number; userEmail: string }): Promise<ApplicationBoardCard> {
+  return postJson<ApplicationBoardCard>("/api/v1/applications/save", {
+    job_id: params.jobId,
+    user_email: params.userEmail,
+  });
+}
+
+/** Matches PATCH /api/v1/applications/{id}/status on services/core-api — a Kanban column drop. */
+export async function updateApplicationStatus(params: {
+  applicationId: number;
+  status: ApplicationStatus;
+}): Promise<ApplicationBoardCard> {
+  return patchJson<ApplicationBoardCard>(`/api/v1/applications/${params.applicationId}/status`, {
+    status: params.status,
+  });
+}
+
+/** Matches PATCH /api/v1/applications/{id}/round on services/core-api — advance the interview round. */
+export async function updateInterviewRound(params: {
+  applicationId: number;
+  interviewRound: number;
+}): Promise<ApplicationBoardCard> {
+  return patchJson<ApplicationBoardCard>(`/api/v1/applications/${params.applicationId}/round`, {
+    interview_round: params.interviewRound,
   });
 }

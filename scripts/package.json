@@ -3,12 +3,16 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "fetch:jobs": "node fetch-real-jobs.mjs --city=all --source=all",
+    "fetch:jobs:adzuna": "node fetch-real-jobs.mjs --city=all --source=adzuna",
+    "fetch:jobs:boards": "node fetch-real-jobs.mjs --city=all --source=boards"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "dotenv": "^16.4.5",
     "linkedin-jobs-scraper": "^18.0.1",
     "pg": "^8.23.0"
   },

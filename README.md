@@ -232,6 +232,66 @@ docker compose up -d --build   # Recreate from scratch
 
 ---
 
+## Real Data Ingestion
+
+Company/job data is populated via `scripts/fetch-real-jobs.mjs`, which pulls **real** postings from legitimate, ToS-safe sources (no LinkedIn/Naukri scraping):
+
+- **Adzuna Jobs API** — free-tier, real India listings with real apply links.
+- **Greenhouse / Lever public job-board JSON** — no auth needed, real postings from companies using those ATSs.
+
+```bash
+cd scripts
+npm install
+cp .env.example .env
+# Fill in ADZUNA_APP_ID / ADZUNA_APP_KEY — free signup at https://developer.adzuna.com/
+
+npm run fetch:jobs            # both sources, all cities
+npm run fetch:jobs:adzuna     # Adzuna only
+npm run fetch:jobs:boards     # Greenhouse/Lever only
+
+node fetch-real-jobs.mjs --city=Mumbai --source=all   # a single city
+```
+
+Covers all major India tech hubs: Bengaluru, Chennai, Hyderabad, Kochi, Mumbai, Pune, Delhi NCR, Kolkata, Ahmedabad. The script upserts companies by name and refreshes a job's `fetched_at` if it's seen it before, so it's safe to re-run.
+
+Every run also sweeps for staleness: any pipeline-sourced job not re-confirmed by a run in the last `STALE_JOB_DAYS` (default 21) gets marked inactive, so listings that quietly disappeared from the source stop showing as "open." Statically-seeded demo jobs (no `fetched_at`) are never touched by this.
+
+To keep listings fresh automatically, start the optional refresher container:
+
+```bash
+cd infra
+docker compose --profile refresh up -d
+```
+
+This re-runs the fetcher on a 6-hour loop against the running core-api.
+
+---
+
+## Application Tracker & Email-Based Interview Tracking
+
+The Application Tracker (`/tracker`) is a Kanban board (Saved → Applied → Interviewing → Offered) identified by email — no password, no login. Every user gets a personal forwarding address (`u-{token}@{INBOUND_EMAIL_DOMAIN}`); forwarding a company's interview email to it lets the backend auto-advance that card's round/status instead of clicking through manually.
+
+**To enable email extraction** (free, no paid API key): set `GROQ_API_KEY` in `services/core-api/.env` — sign up free at [console.groq.com](https://console.groq.com). Without it, the webhook still works but logs an unmatched, unextracted event instead of erroring.
+
+**To enable real inbound email** (needs a domain you control):
+1. Point that domain's MX record at SendGrid.
+2. In SendGrid, create an Inbound Parse route for it targeting `POST https://{user}:{password}@<your-api-host>/api/v1/emails/inbound` — embedding HTTP Basic Auth credentials in the URL is SendGrid's own documented way to secure an Inbound Parse route (it has no request-signing like their separate Event Webhook does).
+3. Set `INBOUND_EMAIL_DOMAIN` (the domain from step 1), `SENDGRID_INBOUND_USERNAME`, and `SENDGRID_INBOUND_PASSWORD` (matching what you put in the webhook URL) in `services/core-api/.env`.
+
+Until `SENDGRID_INBOUND_USERNAME`/`SENDGRID_INBOUND_PASSWORD` are set, the webhook stays open (so it's testable locally, see below) — set both before pointing a real domain at it. `INBOUND_EMAIL_DOMAIN` staying empty makes the tracker show a "not set up yet" banner; the manual "Next round" button on each card keeps working regardless.
+
+**Test the webhook locally without any of the above**, simulating SendGrid's POST:
+```bash
+curl -X POST http://localhost:8000/api/v1/emails/inbound \
+  -F "to=u-<forwarding_token>@track.example.com" \
+  -F "from=hr@razorpay.com" \
+  -F "subject=Interview Invitation - Round 2" \
+  -F "text=We'd like to invite you to a second round technical interview."
+```
+Get `<forwarding_token>` from `POST /api/v1/users/identify {"email": "you@example.com"}`'s response.
+
+---
+
 ## Deployment
 
 ### Backend (Production)

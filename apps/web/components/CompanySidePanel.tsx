@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
   XCircle,
@@ -21,14 +21,18 @@ import {
   TrendingUp,
   Building2,
   ArrowUpRight,
+  Bookmark,
 } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { useMapSelectionStore } from "@/lib/store";
+import { useIdentityStore } from "@/lib/identityStore";
 import {
   getCompanyById,
   getJobsByCompany,
   submitApplication,
+  saveJob,
   type Job,
   type WorkMode,
   type Company,
@@ -137,7 +141,17 @@ function CompanyInfoBar({ company }: { company: Company }) {
   );
 }
 
-function RoleCard({ job }: { job: Job }) {
+function RoleCard({
+  job,
+  isSaved,
+  onSave,
+  canSave,
+}: {
+  job: Job;
+  isSaved: boolean;
+  onSave: () => void;
+  canSave: boolean;
+}) {
   const mode = job.work_mode ? WORK_MODE_LABELS[job.work_mode] : null;
   return (
     <div className="rounded-xl border border-gray-100 bg-white p-3 transition-all hover:border-green-200 hover:shadow-sm">
@@ -165,21 +179,39 @@ function RoleCard({ job }: { job: Job }) {
             )}
           </div>
         </div>
-        {job.apply_url ? (
-          <a
-            href={job.apply_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 px-2.5 py-1.5 text-[10px] font-bold text-white shadow-sm shadow-green-500/20 transition-all hover:shadow-md hover:shadow-green-500/30"
-          >
-            <Zap className="h-3 w-3" />
-            APPLY
-          </a>
-        ) : (
-          <span className="shrink-0 rounded-lg bg-gray-100 px-2.5 py-1.5 text-[10px] font-bold text-gray-400">
-            APPLY
-          </span>
-        )}
+        <div className="flex shrink-0 items-center gap-1">
+          {canSave && (
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={isSaved}
+              title={isSaved ? "Saved to your tracker" : "Save to your tracker"}
+              className={cn(
+                "flex h-7 w-7 items-center justify-center rounded-lg border transition-all",
+                isSaved
+                  ? "border-green-200 bg-green-50 text-green-600"
+                  : "border-gray-200 text-gray-400 hover:border-green-200 hover:bg-green-50 hover:text-green-600"
+              )}
+            >
+              <Bookmark className="h-3.5 w-3.5" fill={isSaved ? "currentColor" : "none"} />
+            </button>
+          )}
+          {job.apply_url ? (
+            <a
+              href={job.apply_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 rounded-lg bg-gradient-to-r from-green-500 to-emerald-600 px-2.5 py-1.5 text-[10px] font-bold text-white shadow-sm shadow-green-500/20 transition-all hover:shadow-md hover:shadow-green-500/30"
+            >
+              <Zap className="h-3 w-3" />
+              APPLY
+            </a>
+          ) : (
+            <span className="rounded-lg bg-gray-100 px-2.5 py-1.5 text-[10px] font-bold text-gray-400">
+              APPLY
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -188,6 +220,8 @@ function RoleCard({ job }: { job: Job }) {
 export function CompanySidePanel() {
   const selectedCompanyId = useMapSelectionStore((s) => s.selectedCompanyId);
   const [selectedResume, setSelectedResume] = useState("Quantum_Analytics_Resume.pdf");
+  const email = useIdentityStore((s) => s.email);
+  const queryClient = useQueryClient();
 
   const companyQuery = useQuery({
     queryKey: ["company", selectedCompanyId],
@@ -202,10 +236,21 @@ export function CompanySidePanel() {
   });
 
   const applyMutation = useMutation({
-    mutationFn: (v: { jobId: number; resumeFilename: string }) => submitApplication(v),
+    mutationFn: (v: { jobId: number; resumeFilename: string }) =>
+      submitApplication({ ...v, userEmail: email }),
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["applicationBoard", email] }),
   });
 
-  useEffect(() => { applyMutation.reset(); }, [selectedCompanyId]);
+  const [savedJobIds, setSavedJobIds] = useState<Set<number>>(new Set());
+  const saveMutation = useMutation({
+    mutationFn: (jobId: number) => saveJob({ jobId, userEmail: email as string }),
+    onSuccess: (_data, jobId) => {
+      setSavedJobIds((prev) => new Set(prev).add(jobId));
+      queryClient.invalidateQueries({ queryKey: ["applicationBoard", email] });
+    },
+  });
+
+  useEffect(() => { applyMutation.reset(); setSavedJobIds(new Set()); }, [selectedCompanyId]);
 
   if (selectedCompanyId === null) return <EmptyState />;
   if (companyQuery.isLoading) return <LoadingSkeleton />;
@@ -301,7 +346,15 @@ export function CompanySidePanel() {
         </div>
         <div className="flex flex-col gap-1.5">
           {jobs.length > 0 ? (
-            jobs.map((job) => <RoleCard key={job.id} job={job} />)
+            jobs.map((job) => (
+              <RoleCard
+                key={job.id}
+                job={job}
+                canSave={!!email}
+                isSaved={savedJobIds.has(job.id)}
+                onSave={() => saveMutation.mutate(job.id)}
+              />
+            ))
           ) : (
             <p className="py-2 text-center text-[11px] text-gray-400">No active roles right now</p>
           )}

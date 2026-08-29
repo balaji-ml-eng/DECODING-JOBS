@@ -35,6 +35,23 @@ class Settings(BaseSettings):
             return [origin.strip() for origin in value.split(",") if origin.strip()]
         return value
 
+    # Email-based interview round detection (app/api/emails.py). All optional —
+    # unset means the feature stays inert (webhook logs an unmatched event,
+    # extraction returns nulls) rather than erroring.
+    # Free-tier key from https://console.groq.com — no paid API key needed.
+    GROQ_API_KEY: str | None = None
+    # Domain the SendGrid Inbound Parse route is configured on, e.g.
+    # "track.example.com" — a user's forwarding address is u-{token}@this.
+    # None until that DNS/SendGrid setup is done.
+    INBOUND_EMAIL_DOMAIN: str | None = None
+    # HTTP Basic Auth credentials for the inbound webhook — this is SendGrid's
+    # own documented way to secure an Inbound Parse route (Inbound Parse has
+    # no request-signing like their Event Webhook does), configured by
+    # embedding https://{user}:{password}@your-domain.com/... in the parse
+    # route's target URL. Required once INBOUND_EMAIL_DOMAIN is set.
+    SENDGRID_INBOUND_USERNAME: str | None = None
+    SENDGRID_INBOUND_PASSWORD: str | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:
