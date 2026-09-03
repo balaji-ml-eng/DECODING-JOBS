@@ -299,3 +299,29 @@ class LogoCache(Base):
     fetched_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
+
+
+class Resume(Base):
+    """An uploaded resume, its extracted text, and its ATS analysis.
+
+    File bytes are kept (same BYTEA-in-Postgres pattern as LogoCache) so a
+    resume can be re-analyzed later without asking the user to re-upload.
+    """
+
+    __tablename__ = "resumes"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    filename: Mapped[str] = mapped_column(String(255), nullable=False)
+    content_type: Mapped[str] = mapped_column(String(100), nullable=False)
+    file_bytes: Mapped[bytes] = mapped_column(LargeBinary, nullable=False)
+    extracted_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ats_score: Mapped[int | None] = mapped_column(SmallInteger, nullable=True)
+    ats_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    ats_suggestions: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    uploaded_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

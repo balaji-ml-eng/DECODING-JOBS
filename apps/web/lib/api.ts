@@ -180,6 +180,11 @@ export async function getJobsByCompany(companyId: number): Promise<Job[]> {
   return fetchJson<Job[]>(`/api/v1/jobs?${params.toString()}`);
 }
 
+/** Matches GET /api/v1/jobs/{job_id} on services/core-api — a Job with its Company embedded. */
+export async function getJobById(jobId: number): Promise<Job & { company: Company }> {
+  return fetchJson<Job & { company: Company }>(`/api/v1/jobs/${jobId}`);
+}
+
 /** Matches GET /api/v1/jobs/search?q=... on services/core-api. */
 export interface JobSearchResult {
   company_id: number;
@@ -278,5 +283,104 @@ export async function updateInterviewRound(params: {
 }): Promise<ApplicationBoardCard> {
   return patchJson<ApplicationBoardCard>(`/api/v1/applications/${params.applicationId}/round`, {
     interview_round: params.interviewRound,
+  });
+}
+
+// ---------------------------------------------------------------------------
+// AI Assistant — resume ATS coach + chat
+// ---------------------------------------------------------------------------
+
+export interface AtsSuggestions {
+  strengths: string[];
+  weaknesses: string[];
+  suggestions: string[];
+  missing_keywords: string[];
+}
+
+export interface Resume {
+  id: number;
+  filename: string;
+  ats_score: number | null;
+  ats_summary: string | null;
+  ats_suggestions: AtsSuggestions | null;
+  uploaded_at: string;
+  analyzed_at: string | null;
+}
+
+/** Matches POST /api/v1/resumes/upload on services/core-api. */
+export async function uploadResume(params: { file: File; userEmail: string }): Promise<Resume> {
+  const form = new FormData();
+  form.append("file", params.file);
+  form.append("user_email", params.userEmail);
+
+  const response = await fetch(`${API_BASE_URL}/api/v1/resumes/upload`, {
+    method: "POST",
+    body: form,
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.detail || `Resume upload failed (${response.status})`);
+  }
+  return response.json() as Promise<Resume>;
+}
+
+/** Matches POST /api/v1/resumes/{id}/analyze on services/core-api. */
+export async function analyzeResume(params: { resumeId: number; jobId?: number }): Promise<Resume> {
+  return postJson<Resume>(`/api/v1/resumes/${params.resumeId}/analyze`, {
+    job_id: params.jobId ?? null,
+  });
+}
+
+/** Matches GET /api/v1/resumes on services/core-api. */
+export async function listResumes(email: string): Promise<Resume[]> {
+  const params = new URLSearchParams({ email });
+  return fetchJson<Resume[]>(`/api/v1/resumes?${params.toString()}`);
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface ChatJobResult {
+  id: number;
+  title: string;
+  company_name: string;
+  company_id: number;
+  sector: string | null;
+  city: string | null;
+  work_mode: WorkMode | null;
+  apply_url: string | null;
+  website_url: string | null;
+}
+
+export interface ChatCompanyResult {
+  id: number;
+  name: string;
+  sector: string | null;
+  city: string | null;
+  stage: string | null;
+  website_url: string | null;
+  active_job_count: number;
+}
+
+export interface ChatResponse {
+  reply: string;
+  jobs: ChatJobResult[];
+  companies: ChatCompanyResult[];
+}
+
+/** Matches POST /api/v1/chat on services/core-api. */
+export async function sendChatMessage(params: {
+  messages: ChatMessage[];
+  resumeId?: number | null;
+  jobId?: number | null;
+  userEmail?: string | null;
+}): Promise<ChatResponse> {
+  return postJson<ChatResponse>("/api/v1/chat", {
+    messages: params.messages,
+    resume_id: params.resumeId ?? null,
+    job_id: params.jobId ?? null,
+    user_email: params.userEmail ?? null,
   });
 }

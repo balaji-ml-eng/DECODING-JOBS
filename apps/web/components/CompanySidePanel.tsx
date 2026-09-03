@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   CheckCircle2,
@@ -14,17 +15,15 @@ import {
   Briefcase,
   Users,
   Calendar,
-  ExternalLink,
   Zap,
   Globe,
   Linkedin,
   TrendingUp,
-  Building2,
   ArrowUpRight,
   Bookmark,
+  GraduationCap,
 } from "lucide-react";
 
-import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { useMapSelectionStore } from "@/lib/store";
 import { useIdentityStore } from "@/lib/identityStore";
@@ -33,9 +32,11 @@ import {
   getJobsByCompany,
   submitApplication,
   saveJob,
+  listResumes,
   type Job,
   type WorkMode,
   type Company,
+  type Resume,
 } from "@/lib/api";
 
 const WORK_MODE_LABELS: Record<WorkMode, string> = {
@@ -196,6 +197,13 @@ function RoleCard({
               <Bookmark className="h-3.5 w-3.5" fill={isSaved ? "currentColor" : "none"} />
             </button>
           )}
+          <Link
+            href={`/assistant?jobId=${job.id}`}
+            title="Prep for this role with the AI Assistant"
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 text-gray-400 transition-all hover:border-green-200 hover:bg-green-50 hover:text-green-600"
+          >
+            <GraduationCap className="h-3.5 w-3.5" />
+          </Link>
           {job.apply_url ? (
             <a
               href={job.apply_url}
@@ -219,9 +227,35 @@ function RoleCard({
 
 export function CompanySidePanel() {
   const selectedCompanyId = useMapSelectionStore((s) => s.selectedCompanyId);
-  const [selectedResume, setSelectedResume] = useState("Quantum_Analytics_Resume.pdf");
   const email = useIdentityStore((s) => s.email);
   const queryClient = useQueryClient();
+
+  const [resumeDropdownOpen, setResumeDropdownOpen] = useState(false);
+  const [selectedResumeId, setSelectedResumeId] = useState<number | null>(null);
+  const resumeDropdownRef = useRef<HTMLDivElement>(null);
+
+  const resumesQuery = useQuery({
+    queryKey: ["resumes", email],
+    queryFn: () => listResumes(email as string),
+    enabled: !!email,
+  });
+  const resumes: Resume[] = resumesQuery.data ?? [];
+
+  useEffect(() => {
+    if (resumes[0] && (selectedResumeId === null || !resumes.some((r) => r.id === selectedResumeId))) {
+      setSelectedResumeId(resumes[0].id);
+    }
+  }, [resumes, selectedResumeId]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (resumeDropdownRef.current && !resumeDropdownRef.current.contains(e.target as Node)) {
+        setResumeDropdownOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
 
   const companyQuery = useQuery({
     queryKey: ["company", selectedCompanyId],
@@ -279,6 +313,12 @@ export function CompanySidePanel() {
 
   return (
     <div className="scroll-thin flex h-full w-full flex-col gap-3 overflow-y-auto p-3">
+      <style jsx global>{`
+        @keyframes fadeSlideUp {
+          from { opacity: 0; transform: translateY(4px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
       {/* ── Company Header ── */}
       <div className="rounded-2xl bg-gradient-to-br from-green-50 via-white to-emerald-50/50 p-3.5">
         <div className="flex items-start justify-between">
@@ -398,27 +438,71 @@ export function CompanySidePanel() {
           <h2 className="text-xs font-bold text-gray-900">Apply</h2>
         </div>
         <div className="flex flex-col gap-2">
-          {/* Resume selector */}
-          <button
-            type="button"
-            className="flex items-center justify-between rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-left transition-all hover:border-green-200"
-          >
-            <span className="flex items-center gap-1.5 text-[11px] text-gray-600">
-              <FileText className="h-3.5 w-3.5 text-green-500" />
-              <span className="truncate">{selectedResume}</span>
-            </span>
-            <ChevronDown className="h-3.5 w-3.5 shrink-0 text-gray-400" />
-          </button>
+          {/* Resume selector — a real dropdown over the user's uploaded resumes */}
+          {email && resumes.length > 0 ? (
+            <div className="relative" ref={resumeDropdownRef}>
+              <button
+                type="button"
+                onClick={() => setResumeDropdownOpen((v) => !v)}
+                className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-left transition-all hover:border-green-200"
+              >
+                <span className="flex min-w-0 items-center gap-1.5 text-[11px] text-gray-600">
+                  <FileText className="h-3.5 w-3.5 shrink-0 text-green-500" />
+                  <span className="truncate">
+                    {resumes.find((r) => r.id === selectedResumeId)?.filename ?? "Select a resume"}
+                  </span>
+                </span>
+                <ChevronDown className={cn("h-3.5 w-3.5 shrink-0 text-gray-400 transition-transform", resumeDropdownOpen && "rotate-180")} />
+              </button>
+              {resumeDropdownOpen && (
+                <div
+                  className="absolute left-0 right-0 top-full z-20 mt-1.5 max-h-48 overflow-y-auto rounded-lg border border-gray-100 bg-white py-1 shadow-[0_12px_32px_rgba(15,23,42,0.14)]"
+                  style={{ animation: "fadeSlideUp 0.15s ease-out" }}
+                >
+                  {resumes.map((r) => (
+                    <button
+                      key={r.id}
+                      type="button"
+                      onClick={() => {
+                        setSelectedResumeId(r.id);
+                        setResumeDropdownOpen(false);
+                      }}
+                      className={cn(
+                        "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[11px] transition-colors",
+                        r.id === selectedResumeId ? "bg-green-50 text-green-700 font-semibold" : "text-gray-600 hover:bg-gray-50"
+                      )}
+                    >
+                      <span className="truncate">{r.filename}</span>
+                      {r.ats_score !== null && (
+                        <span className="shrink-0 rounded-full bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold text-gray-500">
+                          ATS {r.ats_score}
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          ) : (
+            <Link
+              href="/assistant"
+              className="flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-gray-200 bg-white py-2 text-[11px] font-semibold text-gray-500 transition-all hover:border-green-200 hover:bg-green-50 hover:text-green-700"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              Upload a resume in AI Assistant
+            </Link>
+          )}
 
-          {/* Tailor with AI */}
-          <button
-            type="button"
-            onClick={() => setSelectedResume("Quantum_Analytics_Resume_Tailored.pdf")}
-            className="flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-green-200 bg-white py-1.5 text-[10px] font-semibold text-green-600 transition-all hover:bg-green-50"
-          >
-            <Sparkles className="h-3 w-3" />
-            Tailor with AI
-          </button>
+          {/* Tailor with AI — real resume analysis tailored to this job */}
+          {primaryJob && resumes.length > 0 && (
+            <Link
+              href={`/assistant?jobId=${primaryJob.id}`}
+              className="flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-green-200 bg-white py-1.5 text-[10px] font-semibold text-green-600 transition-all hover:bg-green-50"
+            >
+              <Sparkles className="h-3 w-3" />
+              Tailor resume for this role
+            </Link>
+          )}
 
           {/* Submit */}
           {hasApplied ? (
@@ -428,11 +512,13 @@ export function CompanySidePanel() {
             </div>
           ) : (
             <button
-              className="flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 py-2.5 text-[11px] font-bold text-white shadow-lg shadow-green-500/25 transition-all hover:shadow-xl hover:shadow-green-500/30 disabled:opacity-50 disabled:cursor-not-allowed"
-              disabled={!primaryJob || applyMutation.isPending}
+              className="flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 py-2.5 text-[11px] font-bold text-white shadow-lg shadow-green-500/25 transition-all hover:shadow-xl hover:shadow-green-500/30 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+              disabled={!primaryJob || !selectedResumeId || applyMutation.isPending}
+              title={!selectedResumeId ? "Upload a resume first" : undefined}
               onClick={() => {
-                if (!primaryJob) return;
-                applyMutation.mutate({ jobId: primaryJob.id, resumeFilename: selectedResume });
+                const resume = resumes.find((r) => r.id === selectedResumeId);
+                if (!primaryJob || !resume) return;
+                applyMutation.mutate({ jobId: primaryJob.id, resumeFilename: resume.filename });
               }}
             >
               {applyMutation.isPending ? (

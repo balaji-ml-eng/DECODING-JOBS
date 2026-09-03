@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Map, Marker, type LngLatBoundsLike, type MapRef } from "react-map-gl/maplibre";
+import { Map, Marker, type MapRef } from "react-map-gl/maplibre";
 import "maplibre-gl/dist/maplibre-gl.css";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 import {
@@ -16,7 +16,6 @@ import {
   X,
   Building2,
   TrendingUp,
-  ChevronRight,
   Rocket,
   Landmark,
   Sprout,
@@ -337,9 +336,11 @@ const CompanyPin = React.memo(function CompanyPin({
 });
 
 // ---------------------------------------------------------------------------
-// City-level cluster — a single glass pill combining location, name, company
-// count, and hiring signal. Scales gently with cluster size and lifts on
-// hover/select, echoing the pulse-glow language used by CompanyPin.
+// City-level cluster — a circular data bubble (Airbnb/Zillow-style cluster
+// marker), not a pin: a city cluster represents a whole area's aggregate,
+// not one exact coordinate, so a bubble sized by volume reads more honestly
+// than a point marker. Radial gradient adds depth; the city name floats as
+// a separate label beneath so the bubble itself stays purely numeric.
 const CityPin = React.memo(function CityPin({
   cityName, count, hiringCount, isSelected, isHovered, onClick, onHover, onLeave,
 }: {
@@ -350,87 +351,81 @@ const CityPin = React.memo(function CityPin({
   const hasHiring = hiringCount > 0;
   const isActive = isSelected || isHovered;
 
-  // Larger clusters read as gently larger pills (capped so mega-cities don't dominate).
-  const sizeScale = Math.min(Math.max(count, 1), 200) / 200;
-  const scaleFactor = (isActive ? 1.08 : 1) * (1 + sizeScale * 0.12);
+  // Larger clusters read as gently larger bubbles (capped so mega-cities don't dominate).
+  const sizeScale = Math.min(Math.max(count, 1), 150) / 150;
+  const baseDiameter = 50 + sizeScale * 26; // 50–76px
+  const diameter = isActive ? baseDiameter + 8 : baseDiameter;
 
   return (
     <div
       className="flex flex-col items-center cursor-pointer"
-      style={{
-        zIndex: isActive ? 200 : 50,
-        transform: `scale(${scaleFactor})`,
-        transition: "transform 0.35s cubic-bezier(0.34,1.56,0.64,1)",
-      }}
+      style={{ zIndex: isActive ? 200 : 50 }}
       onClick={onClick}
       onMouseEnter={onHover}
       onMouseLeave={onLeave}
     >
-      <div className="relative">
+      <div
+        className="relative flex items-center justify-center"
+        style={{ width: diameter, height: diameter, transition: "width 0.35s cubic-bezier(0.34,1.56,0.64,1), height 0.35s cubic-bezier(0.34,1.56,0.64,1)" }}
+      >
         {/* Hiring: soft double pulse ring, matching CompanyPin */}
         {hasHiring && (
           <>
-            <div
+            <span
               className="absolute inset-0 rounded-full"
-              style={{
-                border: "2px solid #22c55e",
-                animation: "ping 2.2s cubic-bezier(0,0,0.2,1) infinite",
-                opacity: 0.3,
-                margin: "-8px",
-              }}
+              style={{ border: "2px solid #22c55e", animation: "ping 2.4s cubic-bezier(0,0,0.2,1) infinite", opacity: 0.35 }}
             />
-            <div
+            <span
               className="absolute inset-0 rounded-full"
-              style={{
-                border: "2px solid #22c55e",
-                animation: "ping 2.2s cubic-bezier(0,0,0.2,1) infinite 0.7s",
-                opacity: 0.18,
-                margin: "-8px",
-              }}
+              style={{ border: "2px solid #22c55e", animation: "ping 2.4s cubic-bezier(0,0,0.2,1) infinite 0.8s", opacity: 0.2 }}
             />
           </>
         )}
 
         <div
-          className="flex items-center gap-2 rounded-full py-2 pl-2.5 pr-3.5 transition-all duration-300"
+          className="flex h-full w-full flex-col items-center justify-center rounded-full text-white transition-all duration-300"
           style={{
             background: hasHiring
-              ? "linear-gradient(135deg, #16a34a 0%, #059669 100%)"
-              : "linear-gradient(135deg, #1e293b 0%, #334155 100%)",
+              ? "radial-gradient(circle at 32% 26%, #4ade80 0%, #16a34a 48%, #047857 100%)"
+              : "radial-gradient(circle at 32% 26%, #64748b 0%, #334155 55%, #1e293b 100%)",
             boxShadow: isActive
-              ? hasHiring
-                ? "0 10px 32px -4px rgba(22,163,74,0.5), 0 0 0 3px rgba(255,255,255,0.9)"
-                : "0 10px 32px -4px rgba(15,23,42,0.4), 0 0 0 3px rgba(255,255,255,0.9)"
-              : "0 4px 16px -2px rgba(0,0,0,0.25)",
-            border: "1.5px solid rgba(255,255,255,0.25)",
+              ? "0 16px 40px -8px rgba(0,0,0,0.35), 0 0 0 4px rgba(255,255,255,0.9)"
+              : "0 8px 22px -6px rgba(0,0,0,0.28), inset 0 2px 5px rgba(255,255,255,0.18)",
           }}
         >
-          {/* Icon medallion */}
-          <span
-            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/15 backdrop-blur-sm"
-            style={{ boxShadow: "inset 0 1px 2px rgba(255,255,255,0.2)" }}
-          >
-            <MapPinned className="h-3.5 w-3.5 text-white" />
+          <span className="font-extrabold leading-none" style={{ fontSize: diameter * 0.32 }}>
+            {count}
           </span>
-
-          {/* City name + count */}
-          <div className="flex flex-col leading-tight">
-            <span className="whitespace-nowrap text-[12px] font-bold text-white">{cityName}</span>
-            <span className="whitespace-nowrap text-[10px] font-semibold text-white/75">
-              {count} {count === 1 ? "company" : "companies"}
-            </span>
-          </div>
-
-          {/* Hiring badge */}
-          {hasHiring && (
-            <span
-              className="ml-0.5 flex shrink-0 items-center gap-1 rounded-full bg-white/20 px-2 py-1 text-[10px] font-extrabold text-white backdrop-blur-sm"
-            >
-              <Briefcase className="h-2.5 w-2.5" />
-              {hiringCount}
-            </span>
-          )}
+          <span
+            className="mt-0.5 whitespace-nowrap font-bold uppercase tracking-wide text-white/70"
+            style={{ fontSize: Math.max(diameter * 0.115, 7.5) }}
+          >
+            {count === 1 ? "company" : "companies"}
+          </span>
         </div>
+
+        {/* Hiring badge */}
+        {hasHiring && (
+          <span
+            className="absolute -bottom-1.5 -right-1.5 flex items-center gap-0.5 rounded-full bg-white px-1.5 py-1 text-[10px] font-extrabold text-green-700 shadow-md"
+          >
+            <Briefcase className="h-2.5 w-2.5" />
+            {hiringCount}
+          </span>
+        )}
+      </div>
+
+      {/* City name — a separate label, not part of the bubble itself */}
+      <div
+        className="mt-1.5 whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-bold shadow-md transition-all duration-300"
+        style={{
+          background: isActive ? "linear-gradient(135deg, #16a34a 0%, #059669 100%)" : "rgba(255,255,255,0.95)",
+          color: isActive ? "white" : "#1f2937",
+          border: isActive ? "none" : "1px solid rgba(0,0,0,0.06)",
+          backdropFilter: "blur(8px)",
+        }}
+      >
+        {cityName}
       </div>
     </div>
   );
@@ -477,6 +472,7 @@ export function MapWorkspace() {
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const isFirstRender = useRef(true);
   const [hoveredId, setHoveredId] = useState<number | null>(null);
+  const [hoveredCity, setHoveredCity] = useState<string | null>(null);
   const [zoom, setZoom] = useState(6);
 
   const selectedCompanyId = useMapSelectionStore((s) => s.selectedCompanyId);
@@ -635,8 +631,6 @@ export function MapWorkspace() {
   const { data: allCities } = useQuery({ queryKey: ["cities"], queryFn: getCities });
   const showCityPins = !filteredCompanies || filteredCompanies.length === 0 || isOverviewMode;
 
-  const initialCenter = getCityCenter("Bengaluru");
-
   return (
     <div className="relative h-full w-full overflow-hidden">
       {/* ── Global CSS ── */}
@@ -690,7 +684,7 @@ export function MapWorkspace() {
                 count={cityInfo.count}
                 hiringCount={cityInfo.hiring_count}
                 isSelected={selectedCity === cityInfo.city}
-                isHovered={false}
+                isHovered={hoveredCity === cityInfo.city}
                 onClick={() => {
                   setSelectedCity(cityInfo.city);
                   mapRef.current?.flyTo({
@@ -699,8 +693,8 @@ export function MapWorkspace() {
                     duration: 1200,
                   });
                 }}
-                onHover={() => {}}
-                onLeave={() => {}}
+                onHover={() => setHoveredCity(cityInfo.city)}
+                onLeave={() => setHoveredCity(null)}
               />
             </Marker>
           );
@@ -774,7 +768,7 @@ export function MapWorkspace() {
           {/* Job search results dropdown */}
           {searchQuery && jobSearchResults && jobSearchResults.length > 0 && (
             <div
-              className="absolute left-0 right-0 top-full z-50 mt-2 max-h-80 overflow-y-auto rounded-2xl border border-gray-100 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.14)]"
+              className="scroll-thin absolute left-0 right-0 top-full z-50 mt-2 max-h-80 overflow-y-auto rounded-2xl border border-gray-100 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.14)]"
               style={{ animation: "fadeSlideUp 0.15s ease-out" }}
             >
               <div className="sticky top-0 flex items-center gap-1.5 border-b border-gray-100 bg-gradient-to-r from-green-50 to-emerald-50/50 px-3.5 py-2.5">
@@ -832,7 +826,7 @@ export function MapWorkspace() {
               style={{ animation: "fadeSlideUp 0.15s ease-out" }}
             >
               <Search className="mx-auto h-5 w-5 text-gray-200" />
-              <p className="mt-2 text-xs font-medium text-gray-500">No jobs found for "{searchQuery}"</p>
+              <p className="mt-2 text-xs font-medium text-gray-500">No jobs found for &quot;{searchQuery}&quot;</p>
               <p className="mt-0.5 text-[10px] text-gray-400">Try a different role or skill</p>
             </div>
           )}
@@ -942,7 +936,7 @@ export function MapWorkspace() {
           <div className="hidden items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-xs font-semibold shadow-lg sm:flex">
             {searchQuery && (
               <span className="rounded-md bg-green-100 px-1.5 py-0.5 text-[9px] font-bold text-green-700">
-                "{searchQuery}"
+                &quot;{searchQuery}&quot;
               </span>
             )}
             <Building2 className="h-3.5 w-3.5 text-green-500" />
@@ -997,7 +991,7 @@ export function MapWorkspace() {
       )}
       <div
         className={cn(
-          "z-50 overflow-y-auto rounded-2xl border border-gray-100 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.12)]",
+          "scroll-thin z-50 overflow-y-auto rounded-2xl border border-gray-100 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.12)]",
           "fixed inset-x-3 bottom-3 max-h-[75vh]",
           "md:absolute md:inset-x-auto md:bottom-auto md:left-4 md:top-20 md:z-30 md:w-56 md:max-h-[calc(100%-100px)] md:block",
           mobileFiltersOpen ? "block" : "hidden"

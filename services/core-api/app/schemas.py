@@ -213,3 +213,77 @@ class EmailEventRead(BaseModel):
     extracted_status: str | None = None
     matched: bool
     created_at: datetime
+
+
+class ResumeRead(BaseModel):
+    """API representation of a Resume, including its ATS analysis once run."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    filename: str
+    ats_score: int | None = None
+    ats_summary: str | None = None
+    ats_suggestions: dict | None = None
+    uploaded_at: datetime
+    analyzed_at: datetime | None = None
+
+
+class ResumeAnalyzeRequest(BaseModel):
+    """Body for POST /resumes/{id}/analyze — optionally tailored to one job."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    job_id: int | None = None
+
+
+class ChatMessage(BaseModel):
+    """One turn in a chat conversation."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: str = Field(..., pattern="^(user|assistant)$")
+    content: str = Field(..., min_length=1, max_length=4000)
+
+
+class ChatRequest(BaseModel):
+    """Body for POST /chat — the full conversation so far, stateless per-turn."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    messages: list[ChatMessage] = Field(..., min_length=1, max_length=50)
+    resume_id: int | None = None
+    job_id: int | None = None
+    user_email: str | None = None
+
+
+class ChatJobResult(BaseModel):
+    """A job the assistant found via a tool call, shown as a result card."""
+
+    id: int
+    title: str
+    company_name: str
+    company_id: int
+    sector: str | None = None
+    city: str | None = None
+    work_mode: str | None = None
+    apply_url: str | None = None
+    website_url: str | None = None
+
+
+class ChatCompanyResult(BaseModel):
+    """A company the assistant found via a tool call, shown as a result card."""
+
+    id: int
+    name: str
+    sector: str | None = None
+    city: str | None = None
+    stage: str | None = None
+    website_url: str | None = None
+    active_job_count: int = 0
+
+
+class ChatResponse(BaseModel):
+    reply: str
+    jobs: list[ChatJobResult] = Field(default_factory=list)
+    companies: list[ChatCompanyResult] = Field(default_factory=list)

@@ -292,6 +292,18 @@ Get `<forwarding_token>` from `POST /api/v1/users/identify {"email": "you@exampl
 
 ---
 
+## AI Job Search Assistant (`/assistant`)
+
+A third page alongside the map and the tracker: a chat assistant grounded in this app's own real company/job data (never invents a company or posting — every job/company it names comes from a tool call into the database), plus a resume ATS coach.
+
+- **Chat** — ask about roles, cities, or companies ("Remote frontend roles in Bengaluru"); the assistant calls real search/filter tools and replies with actual result cards that link back into the map. Ask for interview prep ("prepare me for a Razorpay backend interview") and it pulls that company's real culture/sentiment data plus the real job description when one exists — general interview-format advice is clearly separated from that real data, never presented as a leaked/real question.
+- **Resume Coach** — upload a PDF/DOCX resume (≤5MB); it's parsed to text (`pypdf`/`python-docx`) and scored for ATS-friendliness (0–100) with strengths/weaknesses/rewrite suggestions via the same Groq key used above. Re-analyzing against a specific job (via "Prep for this role" on any job card in the map's side panel, or by picking a resume while `?jobId=` is set) also surfaces missing keywords from that job's real description.
+- **Identity** — same email-only gate as the tracker (`useIdentityStore`/`EmailGate`), no separate login.
+
+Needs the same `GROQ_API_KEY` as the email pipeline above — unset, both chat and resume analysis reply with a friendly "not configured yet" instead of erroring.
+
+---
+
 ## Deployment
 
 ### Backend (Production)

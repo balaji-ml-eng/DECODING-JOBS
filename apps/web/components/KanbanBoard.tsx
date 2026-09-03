@@ -13,12 +13,13 @@ import {
   useSensors,
 } from "@dnd-kit/core";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Bookmark, Send, MessagesSquare, Trophy, Mail, Loader2, AlertTriangle, MapPin, Plus, Sparkles, Copy, Check, X } from "lucide-react";
+import { Bookmark, Send, MessagesSquare, Trophy, Mail, AlertTriangle, MapPin, Plus, Sparkles, Copy, Check, X } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { useIdentityStore } from "@/lib/identityStore";
+import { useLiveUpdatesStore } from "@/lib/liveUpdatesStore";
+import { EmailGate } from "@/components/EmailGate";
 import {
-  identify,
   getApplicationBoard,
   updateApplicationStatus,
   updateInterviewRound,
@@ -245,61 +246,13 @@ function KanbanColumn({
           {cards.length}
         </span>
       </div>
-      <div className="flex flex-1 flex-col gap-2 overflow-y-auto px-2.5 pb-3">
+      <div className="scroll-thin flex flex-1 flex-col gap-2 overflow-y-auto px-2.5 pb-3">
         {cards.length === 0 ? (
           <p className="py-6 text-center text-[11px] text-gray-300">Drop a card here</p>
         ) : (
           cards.map((card, i) => <KanbanCard key={card.id} card={card} index={i} />)
         )}
       </div>
-    </div>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Email gate
-// ---------------------------------------------------------------------------
-
-function EmailGate() {
-  const [value, setValue] = useState("");
-  const setIdentity = useIdentityStore((s) => s.setIdentity);
-  const mutation = useMutation({
-    mutationFn: identify,
-    onSuccess: (user, email) => setIdentity(email, user.id, user.forwarding_address),
-  });
-
-  return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-4 p-6" style={{ animation: "cardFadeIn 0.4s ease-out both" }}>
-      <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-green-50 to-emerald-50 shadow-inner">
-        <Mail className="h-6 w-6 text-green-500" />
-      </div>
-      <div className="text-center">
-        <p className="text-sm font-semibold text-gray-900">See your applications</p>
-        <p className="mt-1 text-xs text-gray-400">Enter your email to load your tracker board</p>
-      </div>
-      <form
-        className="flex w-full max-w-xs gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (value.trim()) mutation.mutate(value.trim());
-        }}
-      >
-        <input
-          type="email"
-          required
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-          placeholder="you@example.com"
-          className="h-10 flex-1 rounded-xl border border-gray-200 px-3 text-sm outline-none transition-all focus:border-green-300 focus:ring-4 focus:ring-green-400/15"
-        />
-        <button
-          type="submit"
-          disabled={mutation.isPending}
-          className="flex h-10 items-center justify-center rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 px-4 text-sm font-semibold text-white shadow-md shadow-green-500/20 transition-all hover:shadow-lg hover:shadow-green-500/30 active:scale-95 disabled:opacity-50"
-        >
-          {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : "Continue"}
-        </button>
-      </form>
     </div>
   );
 }
@@ -358,6 +311,7 @@ function ForwardingBanner() {
 
 export function KanbanBoard() {
   const email = useIdentityStore((s) => s.email);
+  const liveUpdatesEnabled = useLiveUpdatesStore((s) => s.enabled);
   const queryClient = useQueryClient();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const [activeId, setActiveId] = useState<number | null>(null);
@@ -366,6 +320,7 @@ export function KanbanBoard() {
     queryKey: ["applicationBoard", email],
     queryFn: () => getApplicationBoard(email as string),
     enabled: !!email,
+    refetchInterval: liveUpdatesEnabled ? 15_000 : false,
   });
 
   const statusMutation = useMutation({
@@ -389,7 +344,7 @@ export function KanbanBoard() {
     const map: Record<string, ApplicationBoardCard[]> = {};
     for (const column of COLUMNS) map[column.status] = [];
     for (const card of cards ?? []) {
-      if (map[card.status]) map[card.status].push(card);
+      map[card.status]?.push(card);
     }
     return map;
   }, [cards]);
@@ -409,20 +364,43 @@ export function KanbanBoard() {
     statusMutation.mutate({ applicationId, status: newStatus });
   };
 
-  if (!email) return <EmailGate />;
+  if (!email) return <EmailGate title="See your applications" subtitle="Enter your email to load your tracker board" />;
 
   if (isLoading) {
     return (
-      <div className="flex h-full w-full items-center justify-center gap-2 text-sm text-gray-400">
-        <Loader2 className="h-4 w-4 animate-spin text-green-500" /> Loading your board…
+      <div className="flex h-full w-full flex-col gap-3 p-4">
+        <div className="h-6 w-40 animate-pulse rounded-lg bg-gray-100" />
+        <div className="flex flex-1 gap-3 overflow-hidden">
+          {COLUMNS.map((column) => (
+            <div key={column.status} className="flex h-full min-w-[260px] flex-1 flex-col rounded-2xl border border-gray-100 bg-gray-50/60 p-3">
+              <div className="mb-3 h-5 w-24 animate-pulse rounded-lg bg-gray-200/70" />
+              {[0, 1].map((i) => (
+                <div key={i} className="mb-2 h-20 animate-pulse rounded-2xl bg-white" style={{ animationDelay: `${i * 0.1}s` }} />
+              ))}
+            </div>
+          ))}
+        </div>
       </div>
     );
   }
 
   if (isError) {
     return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-sm text-red-500">
-        <AlertTriangle className="h-5 w-5" /> Couldn&apos;t load your board
+      <div className="flex h-full w-full flex-col items-center justify-center gap-3 text-center">
+        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-red-50">
+          <AlertTriangle className="h-5 w-5 text-red-400" />
+        </div>
+        <div>
+          <p className="text-sm font-semibold text-gray-900">Couldn&apos;t load your board</p>
+          <p className="mt-0.5 text-xs text-gray-400">Check your connection and try again</p>
+        </div>
+        <button
+          type="button"
+          onClick={() => queryClient.invalidateQueries({ queryKey: ["applicationBoard", email] })}
+          className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-600 transition-all hover:bg-gray-200"
+        >
+          Retry
+        </button>
       </div>
     );
   }
