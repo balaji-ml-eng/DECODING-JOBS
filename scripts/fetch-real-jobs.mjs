@@ -220,6 +220,18 @@ const KNOWN_BOARDS = [
   { name: "Fractal Analytics", ats: "greenhouse", token: "fractal", city: "Mumbai", website: "https://fractal.ai" },
   { name: "LatentView Analytics", ats: "lever", token: "latentview", city: "Chennai", website: "https://latentview.com" },
   { name: "Tredence", ats: "lever", token: "tredence", city: "Bengaluru", website: "https://tredence.com" },
+
+  // Verified live 2026-09-05 (see scripts/verify-boards*.mjs history) — each
+  // confirmed by checking the actual job `location` fields, not just that the
+  // board token resolves, since a resolving token can still belong to an
+  // unrelated foreign company (caught two false positives this way: a "vogo"
+  // and an "eternal" Lever board that turned out to be Dallas/NYC companies
+  // with no relation to India).
+  { name: "Paytm", ats: "lever", token: "paytm", city: "Delhi NCR", website: "https://paytm.com" }, // Noida HQ, 110+ jobs there
+  { name: "HighRadius", ats: "greenhouse", token: "highradius", city: "Hyderabad", website: "https://highradius.com" }, // 64 Hyderabad jobs
+  { name: "Zenoti", ats: "greenhouse", token: "zenoti", city: "Hyderabad", website: "https://zenoti.com" }, // 22 Hyderabad jobs
+  { name: "Groww", ats: "greenhouse", token: "groww", city: "Bengaluru", website: "https://groww.in" },
+  { name: "HackerRank", ats: "greenhouse", token: "hackerrank", city: "Bengaluru", website: "https://hackerrank.com" }, // 17 Bangalore jobs
 ];
 
 // ---------------------------------------------------------------------------
@@ -361,7 +373,11 @@ async function groupByCompany(rawJobs) {
         name,
         city: job.city,
         area: null,
-        address: job.location || job.city,
+        // Placeholder — a global company's board lists jobs in arbitrary
+        // order, so grabbing the *first* job's location can pick a foreign
+        // office ("Houston, Texas") for a company we're placing in Hyderabad.
+        // Resolved for real below, once every job for this company is in.
+        address: null,
         lat: job.latitude || null,
         lng: job.longitude || null,
         website: job.website || null,
@@ -370,6 +386,16 @@ async function groupByCompany(rawJobs) {
     }
     companyMap.get(name).jobs.push(job);
   }
+
+  // Now that all of each company's jobs are grouped, pick an address from a
+  // job actually located in the target city/India — falling back to the
+  // bare city name (never a random foreign office) if none match.
+  for (const company of companyMap.values()) {
+    const inCity = company.jobs.find((j) => j.location?.toLowerCase().includes(company.city.toLowerCase()));
+    const inIndia = company.jobs.find((j) => /india/i.test(j.location || ""));
+    company.address = inCity?.location || inIndia?.location || company.city;
+  }
+
   return Array.from(companyMap.values());
 }
 

@@ -12,6 +12,7 @@ from pydantic import BaseModel, ConfigDict
 from app.db.session import get_db
 from app.models.domain import Job, Company, EmploymentType, WorkMode
 from app.schemas import JobRead, JobWithCompanyRead
+from app.services.company_verification import verify_founder_domain
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
 
@@ -228,6 +229,61 @@ async def seed_job(
         )
         db.add(job)
 
+    await db.commit()
+    await db.refresh(job)
+
+    return job
+
+
+class JobRegisterRequest(BaseModel):
+    """A founder manually posting a role under their own (verified) company."""
+    model_config = ConfigDict(extra="forbid")
+
+    founder_email: str
+    company_id: int
+    title: str
+    description: str
+    employment_type: str = "full_time"
+    work_mode: str | None = None
+    salary_min: float | None = None
+    salary_max: float | None = None
+    apply_url: str | None = None
+
+
+@router.post(
+    "/register",
+    response_model=JobRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Founder posts a role under their own company (verified by work-email domain)",
+)
+async def register_job(
+    payload: JobRegisterRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Job:
+    """Re-verifies the founder's email against the target company's website
+    domain on every post — a verified company doesn't let just anyone add
+    roles to it, only whoever controls that domain."""
+    company = await db.get(Company, payload.company_id)
+    if company is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Company not found")
+
+    error = verify_founder_domain(payload.founder_email, company.website_url)
+    if error:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=error)
+
+    job = Job(
+        company_id=company.id,
+        title=payload.title.strip(),
+        description=payload.description.strip(),
+        employment_type=EmploymentType(payload.employment_type),
+        work_mode=WorkMode(payload.work_mode) if payload.work_mode else None,
+        salary_min=payload.salary_min,
+        salary_max=payload.salary_max,
+        apply_url=payload.apply_url,
+        is_active=True,
+        source="founder",
+    )
+    db.add(job)
     await db.commit()
     await db.refresh(job)
 

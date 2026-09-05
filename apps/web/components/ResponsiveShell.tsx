@@ -7,14 +7,15 @@ import { MapWorkspace } from "./MapWorkspace";
 import { CompanySidePanel } from "./CompanySidePanel";
 
 /**
- * Below the `lg` breakpoint there's no room for a 75/25 side-by-side split —
- * the company panel becomes a slide-up bottom sheet instead, opened by
- * selecting a pin and dismissed by the backdrop or the close button.
+ * The map is full-bleed at all times — the company panel only exists when
+ * something is selected, sliding in over the map (desktop) or up from the
+ * bottom (mobile) rather than permanently reserving a quarter of the screen
+ * for an empty "select a company" placeholder.
  */
 export function ResponsiveShell() {
   const selectedCompanyId = useMapSelectionStore((s) => s.selectedCompanyId);
   const setSelectedCompanyId = useMapSelectionStore((s) => s.setSelectedCompanyId);
-  const mobileSheetOpen = selectedCompanyId !== null;
+  const isOpen = selectedCompanyId !== null;
 
   return (
     <main className="relative flex min-h-0 flex-1 overflow-hidden">
@@ -23,23 +24,41 @@ export function ResponsiveShell() {
           from { transform: translateY(100%); }
           to { transform: translateY(0); }
         }
+        @keyframes panelSlideIn {
+          from { transform: translateX(100%); opacity: 0.6; }
+          to { transform: translateX(0); opacity: 1; }
+        }
         @keyframes backdropFadeIn {
           from { opacity: 0; }
           to { opacity: 1; }
         }
       `}</style>
 
-      <section className="h-full w-full lg:w-[75%] lg:shrink-0">
+      {/* The map always fills the whole workspace. */}
+      <section className="h-full w-full">
         <MapWorkspace />
       </section>
 
-      {/* Desktop: always-visible side panel */}
-      <section className="hidden h-full w-[25%] shrink-0 border-l border-emerald-100 bg-white lg:block">
-        <CompanySidePanel />
-      </section>
+      {/* Desktop: floating panel, only when a company is selected. */}
+      {isOpen && (
+        <div
+          className="absolute bottom-3 right-3 top-3 z-30 hidden w-[380px] overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-[0_20px_60px_-12px_rgba(15,23,42,0.35)] lg:block"
+          style={{ animation: "panelSlideIn 0.28s cubic-bezier(0.32,0.72,0,1)" }}
+        >
+          <button
+            type="button"
+            onClick={() => setSelectedCompanyId(null)}
+            aria-label="Close"
+            className="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-gray-500 shadow-sm backdrop-blur-sm transition-colors hover:bg-gray-100"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+          <CompanySidePanel />
+        </div>
+      )}
 
       {/* Mobile / tablet: bottom-sheet overlay */}
-      {mobileSheetOpen && (
+      {isOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <div
             className="absolute inset-0 bg-black/30"

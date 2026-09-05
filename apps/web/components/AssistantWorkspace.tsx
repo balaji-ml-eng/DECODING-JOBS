@@ -1,40 +1,27 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
-import { useQuery } from "@tanstack/react-query";
-import { FileText, X } from "lucide-react";
+import { X } from "lucide-react";
 
 import { useIdentityStore } from "@/lib/identityStore";
-import { listResumes } from "@/lib/api";
 import { EmailGate } from "./EmailGate";
 import { ChatAssistant } from "./ChatAssistant";
-import { ResumePanel } from "./ResumePanel";
+import { ChatHistorySidebar } from "./ChatHistorySidebar";
 
 /**
- * Same split-panel shape as the map's ResponsiveShell: chat is the main
- * area, the Resume Coach panel sits alongside it on desktop and becomes a
- * toggled bottom sheet below `lg`.
+ * Full-width chat with a conversation-history sidebar — the layout every
+ * product in this category (ChatGPT, Claude) uses. Resume upload lives
+ * inside the chat itself (attach in the composer), not a separate panel.
  */
 export function AssistantWorkspace() {
   const email = useIdentityStore((s) => s.email);
   const searchParams = useSearchParams();
   const jobId = searchParams.get("jobId");
   const jobIdNum = jobId ? Number(jobId) : null;
-  const [mobileResumeOpen, setMobileResumeOpen] = useState(false);
-  const [selectedResumeId, setSelectedResumeId] = useState<number | null>(null);
 
-  const { data: resumes } = useQuery({
-    queryKey: ["resumes", email],
-    queryFn: () => listResumes(email as string),
-    enabled: !!email,
-  });
-
-  useEffect(() => {
-    if (resumes?.[0] && selectedResumeId === null) {
-      setSelectedResumeId(resumes[0].id);
-    }
-  }, [resumes, selectedResumeId]);
+  const [conversationId, setConversationId] = useState<number | null>(null);
+  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false);
 
   if (!email) {
     return (
@@ -46,11 +33,11 @@ export function AssistantWorkspace() {
   }
 
   return (
-    <div className="relative flex min-h-0 flex-1 overflow-hidden bg-gray-50/40">
+    <div className="relative flex min-h-0 w-full flex-1">
       <style jsx global>{`
-        @keyframes sheetSlideUp {
-          from { transform: translateY(100%); }
-          to { transform: translateY(0); }
+        @keyframes sidebarSlideIn {
+          from { transform: translateX(-100%); }
+          to { transform: translateX(0); }
         }
         @keyframes backdropFadeIn {
           from { opacity: 0; }
@@ -58,67 +45,62 @@ export function AssistantWorkspace() {
         }
       `}</style>
 
-      <section className="flex h-full min-w-0 flex-1 flex-col">
-        <ChatAssistant
-          jobId={jobIdNum}
-          resumeId={selectedResumeId}
-          onOpenResumePanel={() => setMobileResumeOpen(true)}
+      {/* Desktop: always-visible sidebar */}
+      <div className="hidden h-full w-64 shrink-0 border-r border-gray-100 lg:block">
+        <ChatHistorySidebar
+          selectedId={conversationId}
+          onSelect={setConversationId}
+          onNew={() => setConversationId(null)}
         />
-      </section>
+      </div>
 
-      {/* Desktop: always-visible resume panel */}
-      <section className="hidden h-full w-[340px] shrink-0 border-l border-emerald-100 bg-white lg:block">
-        <ResumePanel
-          resumes={resumes ?? []}
-          selectedResumeId={selectedResumeId}
-          onSelectResume={setSelectedResumeId}
-          jobId={jobIdNum}
-        />
-      </section>
-
-      {/* Mobile / tablet: bottom-sheet overlay */}
-      {mobileResumeOpen && (
+      {/* Mobile: slide-in drawer */}
+      {mobileSidebarOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <div
             className="absolute inset-0 bg-black/30"
             style={{ animation: "backdropFadeIn 0.2s ease-out" }}
-            onClick={() => setMobileResumeOpen(false)}
+            onClick={() => setMobileSidebarOpen(false)}
           />
           <div
-            className="absolute inset-x-0 bottom-0 flex max-h-[82vh] flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl"
-            style={{ animation: "sheetSlideUp 0.25s cubic-bezier(0.32,0.72,0,1)" }}
+            className="absolute inset-y-0 left-0 flex w-72 max-w-[80vw] flex-col bg-white shadow-2xl"
+            style={{ animation: "sidebarSlideIn 0.25s cubic-bezier(0.32,0.72,0,1)" }}
           >
-            <div className="relative flex shrink-0 items-center justify-center py-2.5">
-              <div className="h-1 w-10 rounded-full bg-gray-200" />
+            <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-3 py-2.5">
+              <span className="text-xs font-bold uppercase tracking-wider text-gray-500">History</span>
               <button
                 type="button"
-                onClick={() => setMobileResumeOpen(false)}
-                aria-label="Close"
-                className="absolute right-3 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200"
+                onClick={() => setMobileSidebarOpen(false)}
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-100 text-gray-500"
               >
-                <X className="h-4 w-4" />
+                <X className="h-3.5 w-3.5" />
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
-              <ResumePanel
-                resumes={resumes ?? []}
-                selectedResumeId={selectedResumeId}
-                onSelectResume={setSelectedResumeId}
+            <div className="min-h-0 flex-1">
+              <ChatHistorySidebar
+                selectedId={conversationId}
+                onSelect={(id) => {
+                  setConversationId(id);
+                  setMobileSidebarOpen(false);
+                }}
+                onNew={() => {
+                  setConversationId(null);
+                  setMobileSidebarOpen(false);
+                }}
               />
             </div>
           </div>
         </div>
       )}
 
-      {/* Mobile: floating toggle for the resume panel */}
-      <button
-        type="button"
-        onClick={() => setMobileResumeOpen(true)}
-        className="fixed bottom-5 right-5 z-30 flex items-center gap-2 rounded-full bg-gradient-to-r from-green-500 to-emerald-600 px-4 py-3 text-sm font-bold text-white shadow-lg shadow-green-500/30 lg:hidden"
-      >
-        <FileText className="h-4 w-4" />
-        Resume
-      </button>
+      <div className="flex min-h-0 min-w-0 flex-1">
+        <ChatAssistant
+          jobId={jobIdNum}
+          conversationId={conversationId}
+          onConversationChange={setConversationId}
+          onOpenHistory={() => setMobileSidebarOpen(true)}
+        />
+      </div>
     </div>
   );
 }

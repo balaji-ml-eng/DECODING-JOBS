@@ -35,6 +35,11 @@ services:
     restart: unless-stopped
     env_file:
       - ../services/core-api/.env
+      # Personal secrets (GROQ_API_KEY, SendGrid creds, etc.) — gitignored,
+      # never committed. Copy services/core-api/.env.example's relevant lines
+      # into services/core-api/.env.local with your own values.
+      - path: ../services/core-api/.env.local
+        required: false
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-decoding_admin}:${POSTGRES_PASSWORD:-decoding_pass_dev}@postgis:5432/${POSTGRES_DB:-decoding_jobs}
       ENVIRONMENT: development

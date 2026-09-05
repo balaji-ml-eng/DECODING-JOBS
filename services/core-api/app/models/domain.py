@@ -105,6 +105,9 @@ class Company(Base):
     linkedin_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     jobs_url: Mapped[str | None] = mapped_column(Text, nullable=True)
     status: Mapped[str | None] = mapped_column(String(20), nullable=True, default="active")
+    # Set only for founder self-registrations (see POST /companies/register);
+    # null for scraped/seeded companies. Never exposed via CompanyRead.
+    submitted_by_email: Mapped[str | None] = mapped_column(String(255), nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
@@ -325,3 +328,62 @@ class Resume(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
     analyzed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ChatConversation(Base):
+    """One AI Assistant conversation thread — the sidebar's list entries.
+
+    Auto-created on a user's first message in a new chat, titled from it.
+    """
+
+    __tablename__ = "chat_conversations"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    user_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        server_default=func.now(),
+        onupdate=func.now(),
+        nullable=False,
+    )
+
+    messages: Mapped[list["ChatMessageRecord"]] = relationship(
+        back_populates="conversation", cascade="all, delete-orphan", order_by="ChatMessageRecord.created_at"
+    )
+
+
+class ChatMessageRecord(Base):
+    """One turn in a ChatConversation — named *Record* to avoid colliding with
+    the Pydantic `ChatMessage` request schema in app/schemas.py.
+
+    `jobs_json`/`companies_json` are result-card snapshots (from the tool
+    calls that produced them), and `resume_id` links a resume-analysis turn
+    back to its Resume row — together these let a reopened conversation
+    render exactly what the user saw the first time, not just plain text.
+    """
+
+    __tablename__ = "chat_messages"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    conversation_id: Mapped[int] = mapped_column(
+        BigInteger, ForeignKey("chat_conversations.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    role: Mapped[str] = mapped_column(String(20), nullable=False)
+    content: Mapped[str] = mapped_column(Text, nullable=False)
+    jobs_json: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    companies_json: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    resume_id: Mapped[int | None] = mapped_column(
+        BigInteger, ForeignKey("resumes.id", ondelete="SET NULL"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), nullable=False
+    )
+
+    conversation: Mapped["ChatConversation"] = relationship(back_populates="messages")
+    resume: Mapped["Resume | None"] = relationship()

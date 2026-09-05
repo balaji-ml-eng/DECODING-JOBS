@@ -2,17 +2,21 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Sparkles,
   Send,
   Loader2,
   MapPin,
   Briefcase,
-  FileText,
   Bot,
   User,
   RotateCcw,
+  Paperclip,
+  FileText,
+  X,
+  ChevronDown,
+  PanelLeft,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
@@ -21,16 +25,30 @@ import { useIdentityStore } from "@/lib/identityStore";
 import {
   getJobById,
   sendChatMessage,
+  listResumes,
+  uploadResume,
+  analyzeResume,
+  getConversationMessages,
+  appendChatMessage,
   type ChatMessage,
   type ChatJobResult,
   type ChatCompanyResult,
+  type Resume,
 } from "@/lib/api";
+import { ResumeAnalysisCard } from "./ResumeAnalysisCard";
+import { MarkdownMessage } from "./MarkdownMessage";
 
 const STARTER_PROMPTS = [
   "Remote frontend roles in Bengaluru",
   "Fintech companies hiring in Chennai",
   "AI internships for freshers",
   "Help me prep for a backend engineer interview",
+];
+
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+const ACCEPTED_TYPES = [
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
 ];
 
 function logoUrlFor(websiteUrl: string | null): string | null {
@@ -57,6 +75,7 @@ interface Turn {
   content: string;
   jobs?: ChatJobResult[];
   companies?: ChatCompanyResult[];
+  resume?: Resume;
 }
 
 function JobResultCard({ job }: { job: ChatJobResult }) {
@@ -131,18 +150,30 @@ function CompanyResultCard({ company }: { company: ChatCompanyResult }) {
 
 export function ChatAssistant({
   jobId,
-  resumeId,
-  onOpenResumePanel,
+  conversationId,
+  onConversationChange,
+  onOpenHistory,
 }: {
   jobId: number | null;
-  resumeId: number | null;
-  onOpenResumePanel: () => void;
+  conversationId: number | null;
+  onConversationChange: (id: number | null) => void;
+  onOpenHistory: () => void;
 }) {
   const email = useIdentityStore((s) => s.email);
+  const queryClient = useQueryClient();
   const [turns, setTurns] = useState<Turn[]>([]);
   const [input, setInput] = useState("");
+  const [activeResumeId, setActiveResumeId] = useState<number | null>(null);
+  const [resumeMenuOpen, setResumeMenuOpen] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const resumeMenuRef = useRef<HTMLDivElement>(null);
   const seededJobRef = useRef<number | null>(null);
+  // Tracks the last conversationId *we* produced (new chat / first message) —
+  // lets the load-history effect tell "the sidebar picked a different one"
+  // apart from "the id we just got back from our own request".
+  const ownConversationIdRef = useRef<number | null>(null);
 
   const { data: contextJob } = useQuery({
     queryKey: ["job", jobId],
@@ -150,13 +181,71 @@ export function ChatAssistant({
     enabled: jobId !== null,
   });
 
-  const mutation = useMutation({
+  const { data: resumes } = useQuery({
+    queryKey: ["resumes", email],
+    queryFn: () => listResumes(email as string),
+    enabled: !!email,
+  });
+  const activeResume = resumes?.find((r) => r.id === activeResumeId) ?? null;
+
+  // Load a conversation's turns when the sidebar selects one (or clear on "New chat").
+  useEffect(() => {
+    if (conversationId === ownConversationIdRef.current) return;
+
+    if (conversationId === null) {
+      setTurns([]);
+      setActiveResumeId(null);
+      ownConversationIdRef.current = null;
+      return;
+    }
+
+    if (!email) return;
+    let cancelled = false;
+    setLoadingHistory(true);
+    getConversationMessages(conversationId, email)
+      .then((messages) => {
+        if (cancelled) return;
+        setTurns(
+          messages.map((m) => ({
+            role: m.role,
+            content: m.content,
+            jobs: m.jobs.length ? m.jobs : undefined,
+            companies: m.companies.length ? m.companies : undefined,
+            resume: m.resume ?? undefined,
+          }))
+        );
+        const lastResume = [...messages].reverse().find((m) => m.resume)?.resume;
+        setActiveResumeId(lastResume ? lastResume.id : null);
+        ownConversationIdRef.current = conversationId;
+      })
+      .finally(() => !cancelled && setLoadingHistory(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId, email]);
+
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (resumeMenuRef.current && !resumeMenuRef.current.contains(e.target as Node)) {
+        setResumeMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
+
+  const chatMutation = useMutation({
     mutationFn: sendChatMessage,
     onSuccess: (response) => {
       setTurns((prev) => [
         ...prev,
         { role: "assistant", content: response.reply, jobs: response.jobs, companies: response.companies },
       ]);
+      if (response.conversation_id !== null && response.conversation_id !== conversationId) {
+        ownConversationIdRef.current = response.conversation_id;
+        onConversationChange(response.conversation_id);
+        queryClient.invalidateQueries({ queryKey: ["chatConversations", email] });
+      }
     },
     onError: () => {
       setTurns((prev) => [
@@ -166,16 +255,80 @@ export function ChatAssistant({
     },
   });
 
+  const uploadMutation = useMutation({
+    mutationFn: uploadResume,
+    onError: (err: Error) => {
+      setTurns((prev) => [
+        ...prev,
+        { role: "assistant", content: err.message || "Couldn't read that file — try a PDF or DOCX under 5MB." },
+      ]);
+    },
+  });
+
+  const analyzeMutation = useMutation({
+    mutationFn: analyzeResume,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["resumes", email] }),
+  });
+
+  const isBusy = chatMutation.isPending || uploadMutation.isPending || analyzeMutation.isPending || loadingHistory;
+
   const send = (text: string) => {
     const trimmed = text.trim();
-    if (!trimmed || mutation.isPending) return;
+    if (!trimmed || isBusy) return;
 
     const nextTurns: Turn[] = [...turns, { role: "user", content: trimmed }];
     setTurns(nextTurns);
     setInput("");
 
     const history: ChatMessage[] = nextTurns.map((t) => ({ role: t.role, content: t.content }));
-    mutation.mutate({ messages: history, resumeId, jobId, userEmail: email });
+    chatMutation.mutate({ messages: history, resumeId: activeResumeId, jobId, userEmail: email, conversationId });
+  };
+
+  const handleFile = async (file: File | undefined) => {
+    if (!file || !email || isBusy) return;
+    if (!ACCEPTED_TYPES.includes(file.type)) {
+      setTurns((prev) => [...prev, { role: "assistant", content: "Only PDF and DOCX resumes are supported." }]);
+      return;
+    }
+    if (file.size > MAX_UPLOAD_BYTES) {
+      setTurns((prev) => [...prev, { role: "assistant", content: "Resume must be 5MB or smaller." }]);
+      return;
+    }
+
+    const attachContent = `📎 Attached ${file.name}`;
+    setTurns((prev) => [...prev, { role: "user", content: attachContent }]);
+
+    try {
+      const resume = await uploadMutation.mutateAsync({ file, userEmail: email });
+      setActiveResumeId(resume.id);
+      queryClient.invalidateQueries({ queryKey: ["resumes", email] });
+
+      let convId = conversationId;
+      const appended = await appendChatMessage({
+        conversationId: convId,
+        userEmail: email,
+        role: "user",
+        content: attachContent,
+      });
+      if (appended.conversation_id !== convId) {
+        convId = appended.conversation_id;
+        ownConversationIdRef.current = convId;
+        onConversationChange(convId);
+        queryClient.invalidateQueries({ queryKey: ["chatConversations", email] });
+      }
+
+      const analyzed = await analyzeMutation.mutateAsync({ resumeId: resume.id, jobId: jobId ?? undefined });
+      setTurns((prev) => [...prev, { role: "assistant", content: "Here's your ATS analysis:", resume: analyzed }]);
+      await appendChatMessage({
+        conversationId: convId,
+        userEmail: email,
+        role: "assistant",
+        content: "Here's your ATS analysis:",
+        resumeId: analyzed.id,
+      });
+    } catch {
+      // Failures already surfaced via the mutations' own onError handlers.
+    }
   };
 
   // Auto-seed a prep conversation when arriving via "Prep for this role."
@@ -189,10 +342,107 @@ export function ChatAssistant({
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
-  }, [turns, mutation.isPending]);
+  }, [turns, isBusy]);
+
+  const hasStarted = turns.length > 0;
+
+  const composer = (
+    <div className="mx-auto w-full max-w-3xl">
+      {activeResume && (
+        <div className="mb-2 flex items-center gap-2">
+          <div className="relative" ref={resumeMenuRef}>
+            <button
+              type="button"
+              onClick={() => setResumeMenuOpen((v) => !v)}
+              className="flex items-center gap-1.5 rounded-full bg-green-50 px-3 py-1.5 text-[11px] font-semibold text-green-700 transition-all hover:bg-green-100"
+            >
+              <FileText className="h-3 w-3" />
+              <span className="max-w-[160px] truncate">{activeResume.filename}</span>
+              {(resumes?.length ?? 0) > 1 && (
+                <ChevronDown className={cn("h-3 w-3 transition-transform", resumeMenuOpen && "rotate-180")} />
+              )}
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setActiveResumeId(null);
+                }}
+                className="ml-0.5 rounded-full p-0.5 hover:bg-green-200/60"
+              >
+                <X className="h-2.5 w-2.5" />
+              </button>
+            </button>
+            {resumeMenuOpen && (resumes?.length ?? 0) > 1 && (
+              <div
+                className="absolute bottom-full left-0 z-20 mb-1.5 w-56 overflow-hidden rounded-xl border border-gray-100 bg-white py-1 shadow-[0_12px_32px_rgba(15,23,42,0.14)]"
+                style={{ animation: "panelFadeIn 0.15s ease-out" }}
+              >
+                {resumes?.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveResumeId(r.id);
+                      setResumeMenuOpen(false);
+                    }}
+                    className={cn(
+                      "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-[11px] transition-colors",
+                      r.id === activeResumeId ? "bg-green-50 font-semibold text-green-700" : "text-gray-600 hover:bg-gray-50"
+                    )}
+                  >
+                    <span className="truncate">{r.filename}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+      <form
+        className="flex items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault();
+          send(input);
+        }}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf,.docx"
+          className="hidden"
+          onChange={(e) => {
+            handleFile(e.target.files?.[0]);
+            e.target.value = "";
+          }}
+        />
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={isBusy}
+          title="Attach your resume"
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-gray-200 bg-white text-gray-400 transition-all hover:border-green-200 hover:bg-green-50 hover:text-green-600 disabled:opacity-40"
+        >
+          <Paperclip className="h-4 w-4" />
+        </button>
+        <input
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          placeholder="Ask about jobs, companies, or interview prep…"
+          className="h-11 flex-1 rounded-2xl border border-gray-200 bg-gray-50/60 px-4 text-sm outline-none transition-all focus:border-green-300 focus:bg-white focus:ring-4 focus:ring-green-400/15"
+        />
+        <button
+          type="submit"
+          disabled={isBusy || !input.trim()}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md shadow-green-500/20 transition-all hover:shadow-lg active:scale-95 disabled:opacity-40"
+        >
+          {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
+        </button>
+      </form>
+    </div>
+  );
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 w-full flex-col bg-white">
       <style jsx global>{`
         @keyframes turnFadeIn {
           from { opacity: 0; transform: translateY(8px); }
@@ -202,11 +452,31 @@ export function ChatAssistant({
           0%, 60%, 100% { transform: translateY(0); }
           30% { transform: translateY(-4px); }
         }
+        @keyframes panelFadeIn {
+          from { opacity: 0; transform: translateY(6px); }
+          to { opacity: 1; transform: translateY(0); }
+        }
+        @keyframes gaugeSpinIn {
+          from { opacity: 0; transform: scale(0.85) rotate(-30deg); }
+          to { opacity: 1; transform: scale(1) rotate(0deg); }
+        }
+        @keyframes heroFadeIn {
+          from { opacity: 0; transform: translateY(10px) scale(0.98); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
       `}</style>
 
       {/* Header */}
-      <div className="flex shrink-0 items-center gap-2.5 border-b border-emerald-100 bg-gradient-to-r from-white to-green-50/40 px-5 py-3">
-        <div className="flex h-8 w-8 items-center justify-center rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 shadow-md shadow-green-500/20">
+      <div className="flex shrink-0 items-center gap-2.5 border-b border-emerald-100 bg-gradient-to-r from-white to-green-50/40 px-3 py-3 sm:px-5">
+        <button
+          type="button"
+          onClick={onOpenHistory}
+          title="Conversation history"
+          className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-500 transition-all hover:bg-green-50 hover:text-green-700 lg:hidden"
+        >
+          <PanelLeft className="h-4 w-4" />
+        </button>
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 shadow-md shadow-green-500/20">
           <Sparkles className="h-4 w-4 text-white" />
         </div>
         <div className="min-w-0 flex-1">
@@ -216,13 +486,13 @@ export function ChatAssistant({
               Prepping for {contextJob.title} @ {contextJob.company.name}
             </p>
           ) : (
-            <p className="text-[11px] text-gray-400">Ask about real jobs, companies, or interview prep</p>
+            <p className="truncate text-[11px] text-gray-400">Ask about real jobs, companies, or interview prep</p>
           )}
         </div>
-        {turns.length > 0 && (
+        {hasStarted && (
           <button
             type="button"
-            onClick={() => setTurns([])}
+            onClick={() => onConversationChange(null)}
             title="Start a new chat"
             className="flex shrink-0 items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-600 shadow-sm transition-all hover:bg-green-50 hover:text-green-700"
           >
@@ -230,131 +500,108 @@ export function ChatAssistant({
             <span className="hidden sm:inline">New chat</span>
           </button>
         )}
-        <button
-          type="button"
-          onClick={onOpenResumePanel}
-          className="flex shrink-0 items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-600 shadow-sm transition-all hover:bg-green-50 hover:text-green-700 lg:hidden"
-        >
-          <FileText className="h-3.5 w-3.5" />
-          Resume
-        </button>
       </div>
 
-      {/* Messages */}
-      <div ref={scrollRef} className="scroll-thin min-h-0 flex-1 overflow-y-auto px-4 py-4">
-        {turns.length === 0 && (
-          <div className="mx-auto flex max-w-md flex-col items-center gap-4 pt-10 text-center">
+      {!hasStarted ? (
+        // Claude/ChatGPT-style empty state: greeting + composer centered together.
+        <div className="flex flex-1 flex-col items-center justify-center gap-6 px-4 pb-24" style={{ animation: "heroFadeIn 0.35s ease-out both" }}>
+          <div className="flex flex-col items-center gap-4 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-green-50 to-emerald-50 shadow-inner">
               <Bot className="h-6 w-6 text-green-500" />
             </div>
             <div>
-              <p className="text-sm font-semibold text-gray-900">What are you looking for?</p>
+              <p className="text-base font-semibold text-gray-900">What are you looking for?</p>
               <p className="mt-1 text-xs text-gray-400">
-                I search real jobs and companies from the map — tell me a role, a city, or ask for interview prep.
+                Ask about real jobs and companies, or attach your resume for feedback.
               </p>
             </div>
-            <div className="flex flex-wrap justify-center gap-2">
-              {STARTER_PROMPTS.map((prompt) => (
-                <button
-                  key={prompt}
-                  type="button"
-                  onClick={() => send(prompt)}
-                  className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-all hover:border-green-200 hover:bg-green-50 hover:text-green-700"
+          </div>
+          {composer}
+          <div className="flex flex-wrap justify-center gap-2">
+            {STARTER_PROMPTS.map((prompt) => (
+              <button
+                key={prompt}
+                type="button"
+                onClick={() => send(prompt)}
+                className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-all hover:border-green-200 hover:bg-green-50 hover:text-green-700"
+              >
+                {prompt}
+              </button>
+            ))}
+          </div>
+        </div>
+      ) : (
+        <>
+          {/* Messages */}
+          <div ref={scrollRef} className="scroll-thin min-h-0 flex-1 overflow-y-auto px-4 py-4">
+            <div className="mx-auto flex max-w-3xl flex-col gap-4">
+              {turns.map((turn, i) => (
+                <div
+                  key={i}
+                  className={cn("flex gap-2.5", turn.role === "user" ? "flex-row-reverse" : "flex-row")}
+                  style={{ animation: "turnFadeIn 0.25s ease-out both" }}
                 >
-                  {prompt}
-                </button>
+                  <div
+                    className={cn(
+                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
+                      turn.role === "user" ? "bg-gray-100 text-gray-500" : "bg-gradient-to-br from-green-500 to-emerald-600 text-white"
+                    )}
+                  >
+                    {turn.role === "user" ? <User className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
+                  </div>
+                  <div className={cn("flex flex-col gap-2", turn.role === "user" ? "max-w-[85%] items-end" : "max-w-[95%]")}>
+                    <div
+                      className={cn(
+                        "rounded-2xl px-3.5 py-2.5 shadow-sm",
+                        turn.role === "user"
+                          ? "whitespace-pre-wrap bg-gradient-to-r from-green-500 to-emerald-600 text-[13px] leading-relaxed text-white"
+                          : "border border-gray-100 bg-white text-gray-700"
+                      )}
+                    >
+                      {turn.role === "user" ? turn.content : <MarkdownMessage content={turn.content} />}
+                    </div>
+                    {turn.resume && <ResumeAnalysisCard resume={turn.resume} />}
+                    {turn.jobs && turn.jobs.length > 0 && (
+                      <div className="flex w-full flex-col gap-1.5">
+                        {turn.jobs.map((job) => (
+                          <JobResultCard key={job.id} job={job} />
+                        ))}
+                      </div>
+                    )}
+                    {turn.companies && turn.companies.length > 0 && (
+                      <div className="flex w-full flex-col gap-1.5">
+                        {turn.companies.map((company) => (
+                          <CompanyResultCard key={company.id} company={company} />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
               ))}
+
+              {isBusy && (
+                <div className="flex gap-2.5">
+                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 text-white">
+                    <Sparkles className="h-3.5 w-3.5" />
+                  </div>
+                  <div className="flex items-center gap-1 rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
+                    {[0, 1, 2].map((i) => (
+                      <span
+                        key={i}
+                        className="h-1.5 w-1.5 rounded-full bg-green-400"
+                        style={{ animation: `typingBounce 1.2s ease-in-out ${i * 0.15}s infinite` }}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
-        )}
 
-        <div className="mx-auto flex max-w-2xl flex-col gap-4">
-          {turns.map((turn, i) => (
-            <div
-              key={i}
-              className={cn("flex gap-2.5", turn.role === "user" ? "flex-row-reverse" : "flex-row")}
-              style={{ animation: "turnFadeIn 0.25s ease-out both" }}
-            >
-              <div
-                className={cn(
-                  "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
-                  turn.role === "user" ? "bg-gray-100 text-gray-500" : "bg-gradient-to-br from-green-500 to-emerald-600 text-white"
-                )}
-              >
-                {turn.role === "user" ? <User className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
-              </div>
-              <div className={cn("flex max-w-[85%] flex-col gap-2", turn.role === "user" && "items-end")}>
-                <div
-                  className={cn(
-                    "whitespace-pre-wrap rounded-2xl px-3.5 py-2.5 text-[13px] leading-relaxed shadow-sm",
-                    turn.role === "user"
-                      ? "bg-gradient-to-r from-green-500 to-emerald-600 text-white"
-                      : "border border-gray-100 bg-white text-gray-700"
-                  )}
-                >
-                  {turn.content}
-                </div>
-                {turn.jobs && turn.jobs.length > 0 && (
-                  <div className="flex w-full flex-col gap-1.5">
-                    {turn.jobs.map((job) => (
-                      <JobResultCard key={job.id} job={job} />
-                    ))}
-                  </div>
-                )}
-                {turn.companies && turn.companies.length > 0 && (
-                  <div className="flex w-full flex-col gap-1.5">
-                    {turn.companies.map((company) => (
-                      <CompanyResultCard key={company.id} company={company} />
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-          ))}
-
-          {mutation.isPending && (
-            <div className="flex gap-2.5">
-              <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-green-500 to-emerald-600 text-white">
-                <Sparkles className="h-3.5 w-3.5" />
-              </div>
-              <div className="flex items-center gap-1 rounded-2xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
-                {[0, 1, 2].map((i) => (
-                  <span
-                    key={i}
-                    className="h-1.5 w-1.5 rounded-full bg-green-400"
-                    style={{ animation: `typingBounce 1.2s ease-in-out ${i * 0.15}s infinite` }}
-                  />
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-
-      {/* Input */}
-      <div className="shrink-0 border-t border-gray-100 bg-white p-3">
-        <form
-          className="mx-auto flex max-w-2xl items-center gap-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            send(input);
-          }}
-        >
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="Ask about jobs, companies, or interview prep…"
-            className="h-11 flex-1 rounded-2xl border border-gray-200 bg-gray-50/60 px-4 text-sm outline-none transition-all focus:border-green-300 focus:bg-white focus:ring-4 focus:ring-green-400/15"
-          />
-          <button
-            type="submit"
-            disabled={mutation.isPending || !input.trim()}
-            className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md shadow-green-500/20 transition-all hover:shadow-lg active:scale-95 disabled:opacity-40"
-          >
-            {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-          </button>
-        </form>
-      </div>
+          {/* Input */}
+          <div className="shrink-0 border-t border-gray-100 bg-white p-3">{composer}</div>
+        </>
+      )}
     </div>
   );
 }

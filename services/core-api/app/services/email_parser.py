@@ -18,7 +18,13 @@ from app.core.config import get_settings
 logger = logging.getLogger("decoding_jobs.core_api.email_parser")
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-GROQ_MODEL = "llama-3.3-70b-versatile"
+# Verified against a live key on 2026-09-05 (GET /v1/models) — Groq's lineup
+# changes over time, so re-check that list if this model ever disappears.
+# gpt-oss models are "reasoning" models: they spend tokens on an internal
+# `reasoning` field before the final content, so max_tokens below needs real
+# headroom or json_object mode can fail with "max tokens reached" instead of
+# actually returning JSON.
+GROQ_MODEL = "openai/gpt-oss-120b"
 
 EXTRACTION_SYSTEM_PROMPT = """You extract structured signal from a job-application-related email \
 forwarded by a candidate. Reply with ONLY a JSON object, no other text, matching exactly:
@@ -74,7 +80,7 @@ async def extract_interview_signal(subject: str, text: str) -> ExtractedSignal:
                 },
                 json={
                     "model": GROQ_MODEL,
-                    "max_tokens": 300,
+                    "max_tokens": 600,
                     "response_format": {"type": "json_object"},
                     "messages": [
                         {"role": "system", "content": EXTRACTION_SYSTEM_PROMPT},

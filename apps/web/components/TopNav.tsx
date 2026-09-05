@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useQuery } from "@tanstack/react-query";
-import { Sparkles, ListChecks, MapPin, Radio } from "lucide-react";
+import { Sparkles, ListChecks, MapPin, Radio, Rocket } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 import { Switch } from "@/components/ui/switch";
@@ -87,6 +87,10 @@ export function TopNav() {
       </Link>
 
       <div className="flex items-center gap-1 ml-auto">
+        <NavLink href="/register" icon={Rocket} label="List your startup" active={pathname === "/register"} />
+
+        <div className="mx-1 h-5 w-px bg-gray-200 sm:mx-2" />
+
         <NavLink href="/assistant" icon={Sparkles} label="AI Assistant" active={pathname === "/assistant"} />
 
         <div className="mx-1 h-5 w-px bg-gray-200 sm:mx-2" />

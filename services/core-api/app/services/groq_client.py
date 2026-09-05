@@ -15,7 +15,7 @@ from app.core.config import get_settings
 logger = logging.getLogger("decoding_jobs.core_api.groq_client")
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
-DEFAULT_MODEL = "llama-3.3-70b-versatile"
+DEFAULT_MODEL = "openai/gpt-oss-120b"
 
 
 class GroqUnavailable(Exception):

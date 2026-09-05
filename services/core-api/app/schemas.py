@@ -3,7 +3,7 @@
 from datetime import datetime
 from decimal import Decimal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.models.domain import ApplicationStatus, EmploymentType, WorkMode
 
@@ -44,16 +44,22 @@ class CompanyRead(BaseModel):
     jobs_url: str | None = None
     status: str | None = None
     active_job_count: int = 0
+    # True if any of this company's active jobs went live in the last few
+    # days — powers the map pin's "freshly hiring" flash (distinct from the
+    # steady pulse every hiring company gets).
+    recently_hiring: bool = False
     created_at: datetime
 
     @model_validator(mode="before")
     @classmethod
     def extract_active_job_count(cls, data: "CompanyRead") -> "CompanyRead":
-        """Pull the _active_job_count attribute set by the API route onto the response."""
-        if hasattr(data, "_active_job_count"):
-            data.active_job_count = data._active_job_count
-        elif isinstance(data, dict) and "_active_job_count" in data:
-            data["active_job_count"] = data.pop("_active_job_count")
+        """Pull the _active_job_count/_recently_hiring attributes the API route
+        annotates onto the ORM object before validation."""
+        for attr, field in (("_active_job_count", "active_job_count"), ("_recently_hiring", "recently_hiring")):
+            if hasattr(data, attr):
+                setattr(data, field, getattr(data, attr))
+            elif isinstance(data, dict) and attr in data:
+                data[field] = data.pop(attr)
         return data
 
 
@@ -238,12 +244,20 @@ class ResumeAnalyzeRequest(BaseModel):
 
 
 class ChatMessage(BaseModel):
-    """One turn in a chat conversation."""
+    """One turn in a chat conversation.
+
+    This bounds a single human-typed message, but the client also replays
+    every prior ASSISTANT reply back as history on each new request — and a
+    detailed prep guide or full resume rewrite can legitimately run several
+    thousand characters. A limit sized for "one thing a person typed" broke
+    every subsequent message in a conversation once one long reply landed in
+    it, so this needs real headroom for a full turn, not just an input.
+    """
 
     model_config = ConfigDict(extra="forbid")
 
     role: str = Field(..., pattern="^(user|assistant)$")
-    content: str = Field(..., min_length=1, max_length=4000)
+    content: str = Field(..., min_length=1, max_length=20000)
 
 
 class ChatRequest(BaseModel):
@@ -255,6 +269,7 @@ class ChatRequest(BaseModel):
     resume_id: int | None = None
     job_id: int | None = None
     user_email: str | None = None
+    conversation_id: int | None = None
 
 
 class ChatJobResult(BaseModel):
@@ -287,3 +302,55 @@ class ChatResponse(BaseModel):
     reply: str
     jobs: list[ChatJobResult] = Field(default_factory=list)
     companies: list[ChatCompanyResult] = Field(default_factory=list)
+    conversation_id: int | None = None
+
+
+class ChatConversationRead(BaseModel):
+    """One entry in the AI Assistant's conversation-history sidebar."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    title: str
+    updated_at: datetime
+
+
+class ChatMessageRead(BaseModel):
+    """One stored turn, replayed when a past conversation is reopened."""
+
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    role: str
+    content: str
+    jobs: list[ChatJobResult] = Field(default_factory=list, validation_alias="jobs_json")
+    companies: list[ChatCompanyResult] = Field(default_factory=list, validation_alias="companies_json")
+    resume: ResumeRead | None = None
+    created_at: datetime
+
+    @field_validator("jobs", "companies", mode="before")
+    @classmethod
+    def default_null_json_to_empty_list(cls, value: list | None) -> list:
+        """jobs_json/companies_json are nullable in the DB (most turns have
+        neither) — coerce a null column value to [] rather than failing
+        validation, without touching the source ORM object."""
+        return value if value is not None else []
+
+
+class ChatMessageAppendRequest(BaseModel):
+    """Body for POST /chat/conversations/messages — logs a turn that didn't go
+    through /chat itself (the resume-upload flow's attachment + analysis turns),
+    so history stays complete. Creates a conversation if conversation_id is null."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    conversation_id: int | None = None
+    user_email: str = Field(..., min_length=3, max_length=320)
+    role: str = Field(..., pattern="^(user|assistant)$")
+    content: str = Field(..., min_length=1, max_length=4000)
+    resume_id: int | None = None
+
+
+class ChatMessageAppendResponse(BaseModel):
+    conversation_id: int
+    message_id: int

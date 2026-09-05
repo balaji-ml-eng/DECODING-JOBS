@@ -1,17 +1,23 @@
 """Company-related API routes: viewport-driven map search with filters."""
 
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.db.session import get_db
 from app.models.domain import Company, Job
 from app.schemas import CompanyRead
+from app.services.company_verification import verify_founder_domain
+from app.services.geo import city_center_with_jitter
 
 router = APIRouter(prefix="/companies", tags=["companies"])
+
+# How fresh a job posting has to be for its company's pin to flash "hiring now".
+RECENT_HIRING_DAYS = 3
 
 
 @router.get(
@@ -76,7 +82,9 @@ async def search_companies(
     result = await db.execute(stmt)
     companies = list(result.scalars().all())
 
-    # Annotate each company with its active job count for the frontend.
+    # Annotate each company with its active job count + "hiring freshness"
+    # for the frontend (job posted in the last 3 days gets a flash on the pin).
+    recent_cutoff = datetime.now(timezone.utc) - timedelta(days=RECENT_HIRING_DAYS)
     for company in companies:
         count_result = await db.execute(
             select(func.count(Job.id)).where(
@@ -85,6 +93,15 @@ async def search_companies(
             )
         )
         company._active_job_count = count_result.scalar() or 0
+
+        recent_result = await db.execute(
+            select(func.count(Job.id)).where(
+                Job.company_id == company.id,
+                Job.is_active.is_(True),
+                Job.created_at >= recent_cutoff,
+            )
+        )
+        company._recently_hiring = (recent_result.scalar() or 0) > 0
 
     return companies
 
@@ -215,7 +232,7 @@ async def get_company(
             detail=f"Company {company_id} not found",
         )
 
-    # Annotate with active job count.
+    # Annotate with active job count + hiring freshness.
     count_result = await db.execute(
         select(func.count(Job.id)).where(
             Job.company_id == company.id,
@@ -223,6 +240,16 @@ async def get_company(
         )
     )
     company._active_job_count = count_result.scalar() or 0
+
+    recent_cutoff = datetime.now(timezone.utc) - timedelta(days=RECENT_HIRING_DAYS)
+    recent_result = await db.execute(
+        select(func.count(Job.id)).where(
+            Job.company_id == company.id,
+            Job.is_active.is_(True),
+            Job.created_at >= recent_cutoff,
+        )
+    )
+    company._recently_hiring = (recent_result.scalar() or 0) > 0
 
     return company
 
@@ -302,6 +329,98 @@ async def seed_company(
         )
         db.add(company)
 
+    await db.commit()
+    await db.refresh(company)
+
+    company._active_job_count = 0
+    return company
+
+
+# ---------------------------------------------------------------------------
+# Founder self-registration (public — verified by work-email domain match)
+# ---------------------------------------------------------------------------
+
+
+class CompanyRegisterRequest(BaseModel):
+    """A founder listing their own startup on the map."""
+
+    founder_email: str
+    name: str
+    website_url: str
+    description: str | None = None
+    sector: str | None = None
+    stage: str | None = None
+    city: str | None = None
+    area: str | None = None
+    street_address: str | None = None
+    # Exact office coordinates, if the founder supplies them (e.g. copied from
+    # Google Maps). Falls back to a jittered city-center pin when omitted.
+    latitude: float | None = Field(None, ge=-90, le=90)
+    longitude: float | None = Field(None, ge=-180, le=180)
+    team_size: str | None = None
+    founded_year: int | None = None
+    linkedin_url: str | None = None
+
+
+@router.post(
+    "/register",
+    response_model=CompanyRead,
+    status_code=status.HTTP_201_CREATED,
+    summary="Founder self-registers their startup (verified by work-email domain)",
+)
+async def register_company(
+    payload: CompanyRegisterRequest,
+    db: Annotated[AsyncSession, Depends(get_db)],
+) -> Company:
+    """Publishes immediately if the founder's email domain matches their
+    company's website — no admin queue. Rejects free-email addresses and
+    domain mismatches outright (see app.services.company_verification)."""
+    from geoalchemy2.shape import from_shape
+    from shapely.geometry import Point
+
+    error = verify_founder_domain(payload.founder_email, payload.website_url)
+    if error:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail=error)
+
+    existing = await db.execute(
+        select(Company).where(func.lower(Company.name) == payload.name.strip().lower())
+    )
+    if existing.scalar_one_or_none() is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="A company with this name is already listed. Contact us if this is your "
+            "company and needs updating.",
+        )
+
+    # Use the founder's exact coordinates when given; otherwise place them at
+    # a jittered point near their city's center so the pin is at least
+    # roughly right until they can supply a precise location.
+    if payload.latitude is not None and payload.longitude is not None:
+        latitude, longitude = payload.latitude, payload.longitude
+    else:
+        latitude, longitude = city_center_with_jitter(payload.city, seed=payload.name)
+
+    address = payload.street_address or (
+        f"{payload.area}, {payload.city}" if payload.area else (payload.city or "India")
+    )
+
+    company = Company(
+        name=payload.name.strip(),
+        description=payload.description,
+        address=address,
+        location=from_shape(Point(longitude, latitude), srid=4326),
+        sector=payload.sector,
+        stage=payload.stage,
+        area=payload.area,
+        city=payload.city,
+        founded_year=payload.founded_year,
+        team_size=payload.team_size,
+        linkedin_url=payload.linkedin_url,
+        website_url=payload.website_url,
+        status="active",
+        submitted_by_email=payload.founder_email,
+    )
+    db.add(company)
     await db.commit()
     await db.refresh(company)
 

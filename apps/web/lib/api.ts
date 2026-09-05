@@ -31,6 +31,8 @@ export interface Company {
   jobs_url: string | null;
   status: string | null;
   active_job_count: number;
+  /** True if a job went live in the last few days — powers the pin's "hiring now" flash. */
+  recently_hiring: boolean;
   created_at: string;
 }
 
@@ -368,6 +370,7 @@ export interface ChatResponse {
   reply: string;
   jobs: ChatJobResult[];
   companies: ChatCompanyResult[];
+  conversation_id: number | null;
 }
 
 /** Matches POST /api/v1/chat on services/core-api. */
@@ -376,11 +379,157 @@ export async function sendChatMessage(params: {
   resumeId?: number | null;
   jobId?: number | null;
   userEmail?: string | null;
+  conversationId?: number | null;
 }): Promise<ChatResponse> {
   return postJson<ChatResponse>("/api/v1/chat", {
     messages: params.messages,
     resume_id: params.resumeId ?? null,
     job_id: params.jobId ?? null,
     user_email: params.userEmail ?? null,
+    conversation_id: params.conversationId ?? null,
   });
+}
+
+export interface ChatConversationSummary {
+  id: number;
+  title: string;
+  updated_at: string;
+}
+
+export interface ChatConversationMessage {
+  id: number;
+  role: "user" | "assistant";
+  content: string;
+  jobs: ChatJobResult[];
+  companies: ChatCompanyResult[];
+  resume: Resume | null;
+  created_at: string;
+}
+
+/** Matches GET /api/v1/chat/conversations on services/core-api. */
+export async function listChatConversations(email: string): Promise<ChatConversationSummary[]> {
+  const params = new URLSearchParams({ email });
+  return fetchJson<ChatConversationSummary[]>(`/api/v1/chat/conversations?${params.toString()}`);
+}
+
+/** Matches GET /api/v1/chat/conversations/{id}/messages on services/core-api. */
+export async function getConversationMessages(
+  conversationId: number,
+  email: string
+): Promise<ChatConversationMessage[]> {
+  const params = new URLSearchParams({ email });
+  return fetchJson<ChatConversationMessage[]>(
+    `/api/v1/chat/conversations/${conversationId}/messages?${params.toString()}`
+  );
+}
+
+/** Matches DELETE /api/v1/chat/conversations/{id} on services/core-api. */
+export async function deleteChatConversation(conversationId: number, email: string): Promise<void> {
+  const params = new URLSearchParams({ email });
+  const response = await fetch(
+    `${API_BASE_URL}/api/v1/chat/conversations/${conversationId}?${params.toString()}`,
+    { method: "DELETE" }
+  );
+  if (!response.ok) {
+    throw new Error(`Failed to delete conversation (${response.status})`);
+  }
+}
+
+/** Matches POST /api/v1/chat/conversations/messages on services/core-api. */
+export async function appendChatMessage(params: {
+  conversationId?: number | null;
+  userEmail: string;
+  role: "user" | "assistant";
+  content: string;
+  resumeId?: number | null;
+}): Promise<{ conversation_id: number; message_id: number }> {
+  return postJson<{ conversation_id: number; message_id: number }>("/api/v1/chat/conversations/messages", {
+    conversation_id: params.conversationId ?? null,
+    user_email: params.userEmail,
+    role: params.role,
+    content: params.content,
+    resume_id: params.resumeId ?? null,
+  });
+}
+
+export interface CompanyRegisterParams {
+  founderEmail: string;
+  name: string;
+  websiteUrl: string;
+  description?: string;
+  sector?: string;
+  stage?: string;
+  city?: string;
+  area?: string;
+  streetAddress?: string;
+  latitude?: number;
+  longitude?: number;
+  teamSize?: string;
+  foundedYear?: number;
+  linkedinUrl?: string;
+}
+
+/** Matches POST /api/v1/companies/register on services/core-api. */
+export async function registerCompany(params: CompanyRegisterParams): Promise<Company> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/companies/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      founder_email: params.founderEmail,
+      name: params.name,
+      website_url: params.websiteUrl,
+      description: params.description || null,
+      sector: params.sector || null,
+      stage: params.stage || null,
+      city: params.city || null,
+      area: params.area || null,
+      street_address: params.streetAddress || null,
+      latitude: params.latitude ?? null,
+      longitude: params.longitude ?? null,
+      team_size: params.teamSize || null,
+      founded_year: params.foundedYear || null,
+      linkedin_url: params.linkedinUrl || null,
+    }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.detail || `Company registration failed (${response.status})`);
+  }
+  return response.json() as Promise<Company>;
+}
+
+export interface JobRegisterParams {
+  founderEmail: string;
+  companyId: number;
+  title: string;
+  description: string;
+  employmentType?: EmploymentType;
+  workMode?: WorkMode;
+  salaryMin?: number;
+  salaryMax?: number;
+  applyUrl?: string;
+}
+
+/** Matches POST /api/v1/jobs/register on services/core-api. */
+export async function registerJob(params: JobRegisterParams): Promise<Job> {
+  const response = await fetch(`${API_BASE_URL}/api/v1/jobs/register`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      founder_email: params.founderEmail,
+      company_id: params.companyId,
+      title: params.title,
+      description: params.description,
+      employment_type: params.employmentType || "full_time",
+      work_mode: params.workMode || null,
+      salary_min: params.salaryMin || null,
+      salary_max: params.salaryMax || null,
+      apply_url: params.applyUrl || null,
+    }),
+  });
+  if (!response.ok) {
+    const body = await response.json().catch(() => null);
+    throw new Error(body?.detail || `Job posting failed (${response.status})`);
+  }
+  return response.json() as Promise<Job>;
 }

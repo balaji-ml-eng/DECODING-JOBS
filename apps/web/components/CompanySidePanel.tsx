@@ -45,6 +45,16 @@ const WORK_MODE_LABELS: Record<WorkMode, string> = {
   onsite: "On-site",
 };
 
+function getInitials(name: string): string {
+  return name
+    .split(/[\s&]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((w) => w[0])
+    .join("")
+    .toUpperCase();
+}
+
 function formatSalaryRange(job: Job): string {
   if (job.salary_min && job.salary_max) {
     return `₹${Number(job.salary_min).toLocaleString("en-IN")} – ₹${Number(job.salary_max).toLocaleString("en-IN")}`;
@@ -311,6 +321,14 @@ export function CompanySidePanel() {
       })()
     : null;
 
+  // Same logo-proxy resolution the map pins use, so the profile header shows
+  // the real company mark instead of just a name.
+  const logoUrl = websiteDomain
+    ? `/api/logo?domain=${websiteDomain}`
+    : company.logo_url?.includes("domain=")
+      ? (() => { try { return `/api/logo?domain=${new URL(company.logo_url!).searchParams.get("domain")}`; } catch { return null; } })()
+      : null;
+
   return (
     <div className="scroll-thin flex h-full w-full flex-col gap-3 overflow-y-auto p-3">
       <style jsx global>{`
@@ -321,13 +339,31 @@ export function CompanySidePanel() {
       `}</style>
       {/* ── Company Header ── */}
       <div className="rounded-2xl bg-gradient-to-br from-green-50 via-white to-emerald-50/50 p-3.5">
-        <div className="flex items-start justify-between">
+        <div className="flex items-start gap-3">
+          {logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img
+              src={logoUrl}
+              alt=""
+              className="h-11 w-11 shrink-0 rounded-xl border border-white bg-white object-contain p-1 shadow-sm"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+            />
+          ) : (
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 text-sm font-bold text-white shadow-sm">
+              {getInitials(company.name)}
+            </div>
+          )}
           <div className="min-w-0 flex-1">
             <h1 className="truncate text-base font-bold text-gray-900">{company.name}</h1>
-            <div className="mt-1 flex items-center gap-1.5">
+            <div className="mt-1 flex flex-wrap items-center gap-1.5">
               {company.sector && (
                 <span className="rounded-md bg-green-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-green-700">
                   {company.sector}
+                </span>
+              )}
+              {company.stage && (
+                <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-gray-500">
+                  {company.stage}
                 </span>
               )}
               {company.area && (
@@ -339,6 +375,12 @@ export function CompanySidePanel() {
             </div>
           </div>
         </div>
+
+        {company.description && (
+          <p className="mt-2.5 line-clamp-3 text-[11px] leading-relaxed text-gray-600">
+            {company.description}
+          </p>
+        )}
 
         <div className="mt-2.5">
           <CompanyInfoBar company={company} />

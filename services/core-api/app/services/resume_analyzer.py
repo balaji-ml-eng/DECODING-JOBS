@@ -68,7 +68,7 @@ async def analyze_resume(resume_text: str, job_description: str | None = None) -
                 {"role": "user", "content": user_content},
             ],
             json_mode=True,
-            max_tokens=900,
+            max_tokens=1400,
         )
         raw_text = data["choices"][0]["message"]["content"]
     except GroqUnavailable:

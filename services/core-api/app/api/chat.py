@@ -11,14 +11,24 @@ import json
 import logging
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.api.users import get_or_create_user
 from app.db.session import get_db
-from app.models.domain import Company, Job, Resume
-from app.schemas import ChatCompanyResult, ChatJobResult, ChatRequest, ChatResponse
+from app.models.domain import ChatConversation, ChatMessageRecord, Company, Job, Resume
+from app.schemas import (
+    ChatCompanyResult,
+    ChatConversationRead,
+    ChatJobResult,
+    ChatMessageAppendRequest,
+    ChatMessageAppendResponse,
+    ChatMessageRead,
+    ChatRequest,
+    ChatResponse,
+)
 from app.services.groq_client import GroqUnavailable, chat_completion
 
 logger = logging.getLogger("decoding_jobs.core_api.chat")
@@ -44,7 +54,27 @@ found) versus general advice about that type of role — never claim to know rea
 questions you don't have.
 - If the user's resume text is included in this conversation's context, use it to give specific, \
 personalized advice when relevant (e.g. how it matches a role) — don't ask them to paste it again.
-- Keep replies concise and conversational, not a wall of text.
+- If asked to rewrite, tailor, or create a new resume/version, produce the FULL rewritten resume as \
+Markdown, formatted to actually survive an ATS parse, not just to look nice in chat:
+  * "# Full Name" header, then contact info as plain text (email · phone · LinkedIn · location) on \
+one line — no table, no columns, no icons.
+  * Standard section headers in this order: "## Summary", "## Skills", "## Experience", "## Education" \
+(add "## Projects" or "## Certifications" only if the source resume has that material).
+  * Experience entries as "**Job Title — Company** (dates)" followed by plain "- " bullet points, \
+each starting with a strong verb and, wherever the source material supports it, a number/outcome.
+  * NEVER use a Markdown table for the resume body itself (tables are for your own analysis replies, \
+like a job-comparison — real ATS software frequently mis-parses or drops table content). One column, \
+top to bottom, plain bullets only.
+  * Base it strictly on the real experience/skills already in their uploaded resume text — never \
+invent employers, titles, dates, or achievements that aren't there; rephrase, reorder, and surface \
+keywords from the target job description when one is in context, but don't fabricate new facts.
+- Editing is iterative, like any other chat assistant: if you already produced a rewritten resume \
+earlier in THIS conversation and the user now asks for a change ("make it shorter", "focus more on \
+backend work", "add the internship back in"), revise THAT version — don't regenerate from the raw \
+original as if starting over, and don't restate parts that didn't change. Only fall back to the raw \
+original resume text if the user explicitly asks to start over or there's no earlier rewrite yet.
+- Keep conversational replies concise; a full resume rewrite or a detailed prep guide is the one \
+exception where a long, thorough, well-formatted answer is exactly what's wanted.
 """
 
 TOOLS: list[dict[str, Any]] = [
@@ -244,8 +274,141 @@ def _fallback_response(text: str) -> ChatResponse:
     return ChatResponse(reply=text, jobs=[], companies=[])
 
 
-@router.post("", response_model=ChatResponse, summary="Chat with the AI Job Search Assistant")
-async def chat(payload: ChatRequest, db: Annotated[AsyncSession, Depends(get_db)]) -> ChatResponse:
+def _conversation_title(first_message: str) -> str:
+    title = first_message.strip().splitlines()[0]
+    return title[:57] + "…" if len(title) > 60 else title or "New chat"
+
+
+async def _get_owned_conversation(
+    db: AsyncSession, conversation_id: int, user_id: int
+) -> ChatConversation | None:
+    """Fetches a conversation only if it belongs to this user — prevents one
+    user from reading/appending to another's history by guessing an id."""
+    result = await db.execute(
+        select(ChatConversation).where(
+            ChatConversation.id == conversation_id, ChatConversation.user_id == user_id
+        )
+    )
+    return result.scalar_one_or_none()
+
+
+async def _persist_turn(
+    db: AsyncSession,
+    conversation: ChatConversation,
+    role: str,
+    content: str,
+    jobs: list[dict] | None = None,
+    companies: list[dict] | None = None,
+    resume_id: int | None = None,
+) -> ChatMessageRecord:
+    message = ChatMessageRecord(
+        conversation_id=conversation.id,
+        role=role,
+        content=content,
+        jobs_json=jobs or None,
+        companies_json=companies or None,
+        resume_id=resume_id,
+    )
+    db.add(message)
+    conversation.updated_at = func.now()  # type: ignore[assignment]
+    await db.commit()
+    await db.refresh(message)
+    return message
+
+
+@router.get(
+    "/conversations",
+    response_model=list[ChatConversationRead],
+    summary="List a user's AI Assistant conversations, most recently active first",
+)
+async def list_conversations(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    email: str = Query(..., min_length=3),
+) -> list[ChatConversation]:
+    user = await get_or_create_user(db, email)
+    await db.commit()
+
+    result = await db.execute(
+        select(ChatConversation)
+        .where(ChatConversation.user_id == user.id)
+        .order_by(ChatConversation.updated_at.desc())
+    )
+    return list(result.scalars().all())
+
+
+@router.get(
+    "/conversations/{conversation_id}/messages",
+    response_model=list[ChatMessageRead],
+    summary="Get a conversation's full turn history, to reopen it exactly as it looked",
+)
+async def get_conversation_messages(
+    conversation_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    email: str = Query(..., min_length=3),
+) -> list[ChatMessageRecord]:
+    user = await get_or_create_user(db, email)
+    await db.commit()
+
+    conversation = await _get_owned_conversation(db, conversation_id, user.id)
+    if conversation is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+
+    result = await db.execute(
+        select(ChatMessageRecord)
+        .options(selectinload(ChatMessageRecord.resume))
+        .where(ChatMessageRecord.conversation_id == conversation_id)
+        .order_by(ChatMessageRecord.created_at)
+    )
+    return list(result.scalars().all())
+
+
+@router.delete(
+    "/conversations/{conversation_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Delete a conversation from history",
+)
+async def delete_conversation(
+    conversation_id: int,
+    db: Annotated[AsyncSession, Depends(get_db)],
+    email: str = Query(..., min_length=3),
+) -> None:
+    user = await get_or_create_user(db, email)
+    await db.commit()
+
+    conversation = await _get_owned_conversation(db, conversation_id, user.id)
+    if conversation is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Conversation not found")
+
+    await db.delete(conversation)
+    await db.commit()
+
+
+@router.post(
+    "/conversations/messages",
+    response_model=ChatMessageAppendResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Log a turn that didn't go through /chat (e.g. a resume-upload attachment)",
+)
+async def append_message(
+    payload: ChatMessageAppendRequest, db: Annotated[AsyncSession, Depends(get_db)]
+) -> ChatMessageAppendResponse:
+    user = await get_or_create_user(db, payload.user_email)
+
+    conversation: ChatConversation | None = None
+    if payload.conversation_id is not None:
+        conversation = await _get_owned_conversation(db, payload.conversation_id, user.id)
+    if conversation is None:
+        conversation = ChatConversation(user_id=user.id, title=_conversation_title(payload.content))
+        db.add(conversation)
+        await db.flush()
+
+    message = await _persist_turn(
+        db, conversation, payload.role, payload.content, resume_id=payload.resume_id
+    )
+    return ChatMessageAppendResponse(conversation_id=conversation.id, message_id=message.id)
+
+
+async def _run_chat(payload: ChatRequest, db: AsyncSession) -> ChatResponse:
     system_content = _SYSTEM_PROMPT
 
     if payload.resume_id is not None:
@@ -271,10 +434,21 @@ async def chat(payload: ChatRequest, db: Annotated[AsyncSession, Depends(get_db)
     collected_companies: dict[int, dict] = {}
 
     try:
-        for _ in range(MAX_TOOL_ROUNDS):
-            data = await chat_completion(messages, tools=TOOLS, max_tokens=800)
+        for round_num in range(MAX_TOOL_ROUNDS):
+            # A full resume rewrite or a detailed prep guide runs long, plus
+            # gpt-oss spends tokens on an internal `reasoning` field before
+            # the visible content — 1200 was cutting real answers off
+            # mid-sentence (finish_reason=length).
+            data = await chat_completion(messages, tools=TOOLS, max_tokens=3000)
             message = data["choices"][0]["message"]
             tool_calls = message.get("tool_calls")
+            logger.info(
+                "chat round %d: finish_reason=%s tool_calls=%s content=%r",
+                round_num,
+                data["choices"][0].get("finish_reason"),
+                [c["function"]["name"] for c in (tool_calls or [])],
+                message.get("content"),
+            )
 
             if not tool_calls:
                 return ChatResponse(
@@ -283,7 +457,18 @@ async def chat(payload: ChatRequest, db: Annotated[AsyncSession, Depends(get_db)
                     companies=[ChatCompanyResult(**c) for c in collected_companies.values()],
                 )
 
-            messages.append(message)
+            # Replay only the spec fields — the raw response also carries a
+            # `reasoning` field (gpt-oss models) and omits `content` entirely
+            # rather than nulling it, both of which appear to confuse Groq's
+            # message validation on the next turn and made it re-issue the
+            # same tool call forever instead of ever using the tool result.
+            messages.append(
+                {
+                    "role": "assistant",
+                    "content": message.get("content"),
+                    "tool_calls": tool_calls,
+                }
+            )
             for call in tool_calls:
                 name = call["function"]["name"]
                 try:
@@ -308,6 +493,7 @@ async def chat(payload: ChatRequest, db: Annotated[AsyncSession, Depends(get_db)
                     {
                         "role": "tool",
                         "tool_call_id": call["id"],
+                        "name": name,
                         "content": json.dumps(tool_result),
                     }
                 )
@@ -323,3 +509,38 @@ async def chat(payload: ChatRequest, db: Annotated[AsyncSession, Depends(get_db)
     except Exception:
         logger.exception("Chat request failed")
         return _fallback_response("Something went wrong on my end — please try again.")
+
+
+@router.post("", response_model=ChatResponse, summary="Chat with the AI Job Search Assistant")
+async def chat(payload: ChatRequest, db: Annotated[AsyncSession, Depends(get_db)]) -> ChatResponse:
+    response = await _run_chat(payload, db)
+
+    # Persist history only when identified — anonymous chat (no user_email)
+    # stays exactly as stateless as before this feature existed.
+    if payload.user_email:
+        user = await get_or_create_user(db, payload.user_email)
+
+        conversation: ChatConversation | None = None
+        if payload.conversation_id is not None:
+            conversation = await _get_owned_conversation(db, payload.conversation_id, user.id)
+        if conversation is None:
+            # payload.messages is the FULL history the client is holding;
+            # its last entry is this turn's new user message.
+            title_source = payload.messages[-1].content if payload.messages else "New chat"
+            conversation = ChatConversation(user_id=user.id, title=_conversation_title(title_source))
+            db.add(conversation)
+            await db.flush()
+
+        if payload.messages:
+            await _persist_turn(db, conversation, "user", payload.messages[-1].content)
+        await _persist_turn(
+            db,
+            conversation,
+            "assistant",
+            response.reply,
+            jobs=[j.model_dump() for j in response.jobs] or None,
+            companies=[c.model_dump() for c in response.companies] or None,
+        )
+        response.conversation_id = conversation.id
+
+    return response

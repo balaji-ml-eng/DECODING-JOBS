@@ -68,6 +68,26 @@ function getSectorConfig(sector: string | null) {
   return (SECTOR_CONFIG as Record<string, { color: string; emoji: string }>)[key] ?? DEFAULT_SECTOR;
 }
 
+// Resolve a company's logo through the local `/api/logo` proxy — shared by
+// the map pin, the grid card, and the toolbar's job-search result rows.
+function resolveLogoUrl(company: Pick<Company, "website_url" | "logo_url">): string | null {
+  const websiteDomain = company.website_url
+    ? (() => {
+        try { return new URL(company.website_url).hostname; }
+        catch {
+          const url = company.website_url.replace(/^[/]+/, "").split(/[/s?#]/)[0];
+          return url && url.includes(".") ? url : null;
+        }
+      })()
+    : null;
+  const domain =
+    websiteDomain ||
+    (company.logo_url?.includes("domain=")
+      ? (() => { try { return new URL(company.logo_url!).searchParams.get("domain"); } catch { return null; } })()
+      : null);
+  return domain ? `/api/logo?domain=${domain}` : null;
+}
+
 function getInitials(name: string): string {
   return name
     .split(/[\s&]+/)
@@ -108,7 +128,7 @@ function getCityCenter(city: string): CityConfig {
   return (CITY_CENTERS as Record<string, CityConfig>)[city] ?? CITY_CENTERS["Bengaluru"]!;
 }
 
-const MAP_STYLE_URL = "https://basemaps.cartocdn.com/gl/positron-gl-style/style.json";
+const MAP_STYLE_URL = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
 
 // ---------------------------------------------------------------------------
 // Company Pin — the fancy avatar with logo, hiring glow, and rich tooltip
@@ -135,24 +155,7 @@ const CompanyPin = React.memo(function CompanyPin({
   const sector = getSectorConfig(company.sector) ?? DEFAULT_SECTOR;
 
   // Resolve logo URL via local proxy (computed once)
-  const logoUrl = useMemo(() => {
-    const websiteDomain = company.website_url
-      ? (() => {
-          try { return new URL(company.website_url).hostname; }
-          catch {
-            // Handle bare domains like 'razorpay.com'
-            const url = company.website_url.replace(/^[/]+/, '').split(/[/s?#]/)[0];
-            return url && url.includes('.') ? url : null;
-          }
-        })()
-      : null;
-    const domain =
-      websiteDomain ||
-      (company.logo_url?.includes("domain=")
-        ? (() => { try { return new URL(company.logo_url!).searchParams.get("domain"); } catch { return null; } })()
-        : null);
-    return domain ? `/api/logo?domain=${domain}` : null;
-  }, [company.website_url, company.logo_url]);
+  const logoUrl = useMemo(() => resolveLogoUrl(company), [company.website_url, company.logo_url]);
 
   // Dynamic sizing based on zoom level (snapped to avoid micro-jitter)
   const PIN_SIZE = useMemo(() => {
@@ -285,6 +288,18 @@ const CompanyPin = React.memo(function CompanyPin({
           </div>
         )}
 
+        {/* "NEW" flash — a role went live in the last few days. Distinct
+            fast blink vs. the slow standing pulse every hiring pin gets,
+            so a freshly-opened role is visually obvious at a glance. */}
+        {company.recently_hiring && (
+          <div
+            className="absolute flex items-center justify-center rounded-full bg-lime-400 px-1.5 py-0.5 text-[8px] font-extrabold text-emerald-950 shadow-md"
+            style={{ top: -8, left: "50%", transform: "translateX(-50%)", animation: "newFlash 1.1s ease-in-out infinite", border: "1.5px solid white" }}
+          >
+            NEW
+          </div>
+        )}
+
         {/* Non-hiring dot */}
         {!isHiring && (
           <div
@@ -336,11 +351,11 @@ const CompanyPin = React.memo(function CompanyPin({
 });
 
 // ---------------------------------------------------------------------------
-// City-level cluster — a circular data bubble (Airbnb/Zillow-style cluster
-// marker), not a pin: a city cluster represents a whole area's aggregate,
-// not one exact coordinate, so a bubble sized by volume reads more honestly
-// than a point marker. Radial gradient adds depth; the city name floats as
-// a separate label beneath so the bubble itself stays purely numeric.
+// City-level cluster — a small classic map pin (teardrop), not a card and not
+// a number badge. Count/hiring detail lives in a tooltip that only appears on
+// hover/select, so the pin itself stays small and simple; the 3D feel comes
+// from a glossy rotated-teardrop shape, a floating bob, and a bounce-in drop.
+// ---------------------------------------------------------------------------
 const CityPin = React.memo(function CityPin({
   cityName, count, hiringCount, isSelected, isHovered, onClick, onHover, onLeave,
 }: {
@@ -350,83 +365,90 @@ const CityPin = React.memo(function CityPin({
 }) {
   const hasHiring = hiringCount > 0;
   const isActive = isSelected || isHovered;
-
-  // Larger clusters read as gently larger bubbles (capped so mega-cities don't dominate).
-  const sizeScale = Math.min(Math.max(count, 1), 150) / 150;
-  const baseDiameter = 50 + sizeScale * 26; // 50–76px
-  const diameter = isActive ? baseDiameter + 8 : baseDiameter;
+  const size = isActive ? 34 : 28;
 
   return (
     <div
-      className="flex flex-col items-center cursor-pointer"
+      className="relative flex flex-col items-center cursor-pointer"
       style={{ zIndex: isActive ? 200 : 50 }}
       onClick={onClick}
       onMouseEnter={onHover}
       onMouseLeave={onLeave}
     >
+      {/* Tooltip — city name + counts, shown only on hover/select */}
+      {isActive && (
+        <div
+          className="absolute bottom-full mb-2 flex items-center gap-1.5 whitespace-nowrap rounded-full px-3 py-1.5 text-[11px] font-bold text-white shadow-lg"
+          style={{ background: "linear-gradient(135deg, #1e293b 0%, #334155 100%)", animation: "fadeSlideUp 0.15s ease-out" }}
+        >
+          {cityName}
+          <span className="text-white/60">· {count}</span>
+          {hasHiring && <span className="text-green-400">· {hiringCount} hiring</span>}
+        </div>
+      )}
+
       <div
         className="relative flex items-center justify-center"
-        style={{ width: diameter, height: diameter, transition: "width 0.35s cubic-bezier(0.34,1.56,0.64,1), height 0.35s cubic-bezier(0.34,1.56,0.64,1)" }}
-      >
-        {/* Hiring: soft double pulse ring, matching CompanyPin */}
-        {hasHiring && (
-          <>
-            <span
-              className="absolute inset-0 rounded-full"
-              style={{ border: "2px solid #22c55e", animation: "ping 2.4s cubic-bezier(0,0,0.2,1) infinite", opacity: 0.35 }}
-            />
-            <span
-              className="absolute inset-0 rounded-full"
-              style={{ border: "2px solid #22c55e", animation: "ping 2.4s cubic-bezier(0,0,0.2,1) infinite 0.8s", opacity: 0.2 }}
-            />
-          </>
-        )}
-
-        <div
-          className="flex h-full w-full flex-col items-center justify-center rounded-full text-white transition-all duration-300"
-          style={{
-            background: hasHiring
-              ? "radial-gradient(circle at 32% 26%, #4ade80 0%, #16a34a 48%, #047857 100%)"
-              : "radial-gradient(circle at 32% 26%, #64748b 0%, #334155 55%, #1e293b 100%)",
-            boxShadow: isActive
-              ? "0 16px 40px -8px rgba(0,0,0,0.35), 0 0 0 4px rgba(255,255,255,0.9)"
-              : "0 8px 22px -6px rgba(0,0,0,0.28), inset 0 2px 5px rgba(255,255,255,0.18)",
-          }}
-        >
-          <span className="font-extrabold leading-none" style={{ fontSize: diameter * 0.32 }}>
-            {count}
-          </span>
-          <span
-            className="mt-0.5 whitespace-nowrap font-bold uppercase tracking-wide text-white/70"
-            style={{ fontSize: Math.max(diameter * 0.115, 7.5) }}
-          >
-            {count === 1 ? "company" : "companies"}
-          </span>
-        </div>
-
-        {/* Hiring badge */}
-        {hasHiring && (
-          <span
-            className="absolute -bottom-1.5 -right-1.5 flex items-center gap-0.5 rounded-full bg-white px-1.5 py-1 text-[10px] font-extrabold text-green-700 shadow-md"
-          >
-            <Briefcase className="h-2.5 w-2.5" />
-            {hiringCount}
-          </span>
-        )}
-      </div>
-
-      {/* City name — a separate label, not part of the bubble itself */}
-      <div
-        className="mt-1.5 whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-bold shadow-md transition-all duration-300"
         style={{
-          background: isActive ? "linear-gradient(135deg, #16a34a 0%, #059669 100%)" : "rgba(255,255,255,0.95)",
-          color: isActive ? "white" : "#1f2937",
-          border: isActive ? "none" : "1px solid rgba(0,0,0,0.06)",
-          backdropFilter: "blur(8px)",
+          width: size,
+          height: size,
+          transition: "width 0.25s cubic-bezier(0.34,1.56,0.64,1), height 0.25s cubic-bezier(0.34,1.56,0.64,1)",
+          animation: isActive
+            ? "pinBounceIn 0.45s cubic-bezier(0.34,1.56,0.64,1)"
+            : "pinBounceIn 0.45s cubic-bezier(0.34,1.56,0.64,1), cityFloat 3.2s ease-in-out infinite 0.45s",
         }}
       >
-        {cityName}
+        {/* Hiring pulse — a soft ring breathing outward from the pin head */}
+        {hasHiring && (
+          <span
+            className="pointer-events-none absolute inset-0 rounded-full"
+            style={{ border: "2px solid #22c55e", animation: "ping 2.2s cubic-bezier(0,0,0.2,1) infinite", opacity: 0.4 }}
+          />
+        )}
+
+        {/* Teardrop pin — a rounded square rotated 45deg, the classic map-pin trick */}
+        <div
+          className="absolute inset-0 rounded-[50%_50%_50%_0] transition-transform duration-200"
+          style={{
+            transform: `rotate(-45deg) scale(${isActive ? 1.1 : 1})`,
+            background: hasHiring
+              ? "linear-gradient(135deg, #4ade80 0%, #16a34a 55%, #047857 100%)"
+              : "linear-gradient(135deg, #94a3b8 0%, #475569 55%, #1e293b 100%)",
+            boxShadow: isActive
+              ? "0 10px 20px -4px rgba(0,0,0,0.4), 0 0 0 3px rgba(255,255,255,0.85)"
+              : "0 6px 14px -4px rgba(0,0,0,0.35)",
+          }}
+        >
+          {/* Glossy highlight, kept upright by counter-rotating */}
+          <div
+            className="absolute rounded-full"
+            style={{
+              width: "38%", height: "22%", top: "14%", left: "20%",
+              background: "linear-gradient(135deg, rgba(255,255,255,0.6) 0%, rgba(255,255,255,0) 70%)",
+              transform: "rotate(45deg)",
+            }}
+          />
+        </div>
+
+        {/* Center dot — a sibling of the teardrop, absolutely centered in the
+            square so it stays upright and lands in the pin's round head
+            regardless of the teardrop's own rotation. */}
+        <div
+          className="absolute rounded-full bg-white"
+          style={{ width: "36%", height: "36%", top: "20%", left: "32%" }}
+        />
       </div>
+
+      {/* Ground shadow — breathes opposite the bob so the pin reads as
+          dropped onto the map rather than stuck to it. */}
+      <div
+        className="rounded-[50%] bg-black/25"
+        style={{
+          width: size * 0.55, height: size * 0.14, marginTop: -2,
+          filter: "blur(2px)",
+          animation: "cityShadowBreathe 3.2s ease-in-out infinite 0.45s",
+        }}
+      />
     </div>
   );
 });
@@ -454,6 +476,137 @@ function EmptyFacetHint({ text }: { text: string }) {
   return <p className="px-2.5 py-1.5 text-[11px] text-gray-300">{text}</p>;
 }
 
+// ---------------------------------------------------------------------------
+// Grid view — a card-per-company layout, the Map's alternate view for
+// browsing a whole city's roster at a glance instead of panning around it.
+// ---------------------------------------------------------------------------
+
+const CompanyGridCard = React.memo(function CompanyGridCard({
+  company,
+  isSelected,
+  onClick,
+}: {
+  company: Company;
+  isSelected: boolean;
+  onClick: () => void;
+}) {
+  const sector = getSectorConfig(company.sector);
+  const isHiring = company.active_job_count > 0;
+  const logoUrl = useMemo(() => resolveLogoUrl(company), [company.website_url, company.logo_url]);
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "group flex flex-col items-start gap-2.5 rounded-2xl border bg-white p-3.5 text-left shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg",
+        isSelected ? "border-green-300 ring-2 ring-green-400/30" : "border-gray-100 hover:border-green-200"
+      )}
+    >
+      <div className="flex w-full items-start gap-2.5">
+        {logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={logoUrl}
+            alt=""
+            className="h-10 w-10 shrink-0 rounded-xl border border-gray-100 bg-white object-contain p-1"
+            onError={(e) => { (e.currentTarget as HTMLImageElement).style.display = "none"; }}
+          />
+        ) : (
+          <div
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl text-[11px] font-bold text-white"
+            style={{ background: sector.color }}
+          >
+            {getInitials(company.name)}
+          </div>
+        )}
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[13px] font-bold text-gray-900">{company.name}</p>
+          <p className="mt-0.5 truncate text-[10.5px] text-gray-400">
+            {company.area ? `${company.area}, ` : ""}{company.city}
+          </p>
+        </div>
+        {company.recently_hiring ? (
+          <span
+            className="shrink-0 rounded-full bg-lime-400 px-1.5 py-0.5 text-[8px] font-extrabold text-emerald-950"
+            style={{ animation: "newFlash 1.1s ease-in-out infinite" }}
+            title="New role posted recently"
+          >
+            NEW
+          </span>
+        ) : isHiring ? (
+          <span className="inline-block h-2 w-2 shrink-0 rounded-full bg-green-500 animate-pulse" title="Hiring now" />
+        ) : null}
+      </div>
+
+      <div className="flex flex-wrap items-center gap-1">
+        {company.sector && (
+          <span
+            className="rounded-md px-1.5 py-0.5 text-[9px] font-bold uppercase"
+            style={{ color: sector.color, background: `${sector.color}18` }}
+          >
+            {company.sector}
+          </span>
+        )}
+        {company.stage && (
+          <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-[9px] font-bold uppercase text-gray-500">
+            {company.stage}
+          </span>
+        )}
+        {company.team_size && (
+          <span className="text-[9.5px] text-gray-400">{company.team_size}</span>
+        )}
+      </div>
+
+      {company.description && (
+        <p className="line-clamp-2 text-[10.5px] leading-snug text-gray-400">{company.description}</p>
+      )}
+
+      <div className="mt-auto flex w-full items-center justify-between pt-1">
+        <span className={cn("text-[10.5px] font-semibold", isHiring ? "text-green-600" : "text-gray-300")}>
+          {isHiring ? `${company.active_job_count} open role${company.active_job_count !== 1 ? "s" : ""}` : "No open roles"}
+        </span>
+        <span className="flex items-center gap-0.5 text-[10.5px] font-semibold text-gray-400 opacity-0 transition-opacity group-hover:opacity-100">
+          View <ChevronDown className="h-3 w-3 -rotate-90" />
+        </span>
+      </div>
+    </button>
+  );
+});
+
+function CompanyGridView({
+  companies,
+  selectedCompanyId,
+  onSelect,
+}: {
+  companies: Company[];
+  selectedCompanyId: number | null;
+  onSelect: (id: number) => void;
+}) {
+  if (companies.length === 0) {
+    return (
+      <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-center">
+        <Building2 className="h-8 w-8 text-gray-200" />
+        <p className="text-sm font-medium text-gray-400">No companies match these filters</p>
+      </div>
+    );
+  }
+  return (
+    <div className="scroll-thin h-full w-full overflow-y-auto pb-6 pt-24">
+      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-3 px-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        {companies.map((company) => (
+          <CompanyGridCard
+            key={company.id}
+            company={company}
+            isSelected={company.id === selectedCompanyId}
+            onClick={() => onSelect(company.id)}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // --- Main Component
 export function MapWorkspace() {
   const mapRef = useRef<MapRef>(null);
@@ -474,6 +627,7 @@ export function MapWorkspace() {
   const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [hoveredCity, setHoveredCity] = useState<string | null>(null);
   const [zoom, setZoom] = useState(6);
+  const [viewMode, setViewMode] = useState<"map" | "grid">("map");
 
   const selectedCompanyId = useMapSelectionStore((s) => s.selectedCompanyId);
   const setSelectedCompanyId = useMapSelectionStore((s) => s.setSelectedCompanyId);
@@ -651,11 +805,32 @@ export function MapWorkspace() {
           from { background-position: -200% 0; }
           to { background-position: 200% 0; }
         }
+        @keyframes newFlash {
+          0%, 100% { opacity: 1; transform: translateX(-50%) scale(1); }
+          50% { opacity: 0.55; transform: translateX(-50%) scale(0.92); }
+        }
+        @keyframes cityFloat {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-5px); }
+        }
+        @keyframes cityShadowBreathe {
+          0%, 100% { transform: translateX(-50%) scale(1); opacity: 0.28; }
+          50% { transform: translateX(-50%) scale(0.8); opacity: 0.16; }
+        }
       `}</style>
+
+      {viewMode === "grid" && (
+        <CompanyGridView
+          companies={filteredCompanies ?? []}
+          selectedCompanyId={selectedCompanyId}
+          onSelect={setSelectedCompanyId}
+        />
+      )}
 
       <Map
         ref={mapRef}
         reuseMaps
+        style={{ width: "100%", height: "100%", display: viewMode === "map" ? "block" : "none" }}
         initialViewState={{
           longitude: 78.0,
           latitude: 12.0,
@@ -666,7 +841,6 @@ export function MapWorkspace() {
         onMoveEnd={updateBoundsFromMap}
         onZoom={() => { if (mapRef.current) setZoom(mapRef.current.getZoom()); }}
         onClick={() => setSelectedCompanyId(null)}
-        style={{ width: "100%", height: "100%" }}
         attributionControl={false}
       >
         {/* City-level pins (zoomed out) */}
@@ -891,6 +1065,30 @@ export function MapWorkspace() {
           )}
         </div>
 
+        {/* Map / Grid view toggle */}
+        <div className="flex shrink-0 items-center gap-0.5 rounded-xl bg-white p-1 shadow-lg">
+          <button
+            type="button"
+            onClick={() => setViewMode("map")}
+            className={cn(
+              "rounded-lg px-3 py-1.5 text-xs font-bold transition-all duration-200",
+              viewMode === "map" ? "bg-gray-900 text-white" : "text-gray-500 hover:text-gray-800"
+            )}
+          >
+            Map
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("grid")}
+            className={cn(
+              "rounded-lg px-3 py-1.5 text-xs font-bold transition-all duration-200",
+              viewMode === "grid" ? "bg-gray-900 text-white" : "text-gray-500 hover:text-gray-800"
+            )}
+          >
+            Grid
+          </button>
+        </div>
+
         {/* Hiring filter */}
         <button
           type="button"
@@ -906,16 +1104,22 @@ export function MapWorkspace() {
           {hiringOnly ? "Hiring" : "All"}
         </button>
 
-        {/* Mobile filters toggle — the always-visible left panel becomes a
-            bottom sheet below `md`, opened from here. */}
+        {/* Filters toggle — closed by default on every screen size so the
+            map stays full-bleed until you actually want the facet list. */}
         <button
           type="button"
-          onClick={() => setMobileFiltersOpen(true)}
-          className="flex items-center gap-1.5 rounded-xl bg-white px-3.5 py-2 text-sm font-semibold text-gray-600 shadow-lg transition-all hover:bg-green-50 hover:text-green-700 md:hidden"
+          onClick={() => setMobileFiltersOpen((v) => !v)}
+          className={cn(
+            "flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-semibold shadow-lg transition-all duration-200",
+            mobileFiltersOpen
+              ? "bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-green-500/25"
+              : "bg-white text-gray-600 hover:bg-green-50 hover:text-green-700"
+          )}
         >
           <Filter className="h-4 w-4" />
+          <span className="hidden sm:inline">Filters</span>
           {activeFilterCount > 0 && (
-            <span className="rounded-full bg-green-500 px-1.5 py-0.5 text-[9px] font-bold text-white">
+            <span className={cn("rounded-full px-1.5 py-0.5 text-[9px] font-bold", mobileFiltersOpen ? "bg-white/20" : "bg-green-500 text-white")}>
               {activeFilterCount}
             </span>
           )}
@@ -954,7 +1158,8 @@ export function MapWorkspace() {
         )}
       </div>
 
-      {/* ── Zoom controls ── */}
+      {/* ── Zoom controls (map view only) ── */}
+      {viewMode === "map" && (
       <div className="absolute right-4 top-4 flex flex-col overflow-hidden rounded-xl bg-white shadow-lg">
         <button
           className="flex h-9 w-9 items-center justify-center text-gray-400 transition hover:bg-green-50 hover:text-green-600"
@@ -980,6 +1185,7 @@ export function MapWorkspace() {
           <Compass className="h-4 w-4" />
         </button>
       </div>
+      )}
 
       {/* ── Filter panel ── */}
       {/* Mobile backdrop — the panel becomes a bottom sheet below `md`. */}
@@ -993,7 +1199,7 @@ export function MapWorkspace() {
         className={cn(
           "scroll-thin z-50 overflow-y-auto rounded-2xl border border-gray-100 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.12)]",
           "fixed inset-x-3 bottom-3 max-h-[75vh]",
-          "md:absolute md:inset-x-auto md:bottom-auto md:left-4 md:top-20 md:z-30 md:w-56 md:max-h-[calc(100%-100px)] md:block",
+          "md:absolute md:inset-x-auto md:bottom-auto md:left-4 md:top-20 md:z-30 md:w-56 md:max-h-[calc(100%-100px)]",
           mobileFiltersOpen ? "block" : "hidden"
         )}
         style={{ animation: "fadeSlideUp 0.3s ease-out" }}
@@ -1021,7 +1227,7 @@ export function MapWorkspace() {
           <button
             type="button"
             onClick={() => setMobileFiltersOpen(false)}
-            className={cn("shrink-0 rounded-full bg-gray-100 p-1 text-gray-500 md:hidden", activeFilterCount === 0 && "ml-auto")}
+            className={cn("shrink-0 rounded-full bg-gray-100 p-1 text-gray-500 transition-colors hover:bg-gray-200", activeFilterCount === 0 && "ml-auto")}
           >
             <X className="h-3.5 w-3.5" />
           </button>
