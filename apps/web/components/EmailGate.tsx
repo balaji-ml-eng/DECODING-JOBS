@@ -173,7 +173,7 @@ export function EmailGate({
           <button
             type="submit"
             disabled={linkMutation.isPending || !email.trim()}
-            className="flex items-center justify-center gap-2 rounded-xl border border-gray-200 py-2.5 text-sm font-bold text-gray-700 transition-all hover:bg-gray-50 disabled:opacity-60"
+            className="flex min-h-11 items-center justify-center gap-2 rounded-xl border border-gray-200 text-sm font-bold text-gray-700 lg:min-h-10 transition-all hover:bg-gray-50 disabled:opacity-60"
           >
             {linkMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRight className="h-4 w-4" />}
             Email me a sign-in link

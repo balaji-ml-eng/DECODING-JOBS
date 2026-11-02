@@ -57,10 +57,10 @@ export function FeedbackButton() {
         onClick={() => setOpen(true)}
         aria-label="Send feedback"
         title="Send feedback"
-        className="flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-all hover:bg-green-50 hover:text-green-700 sm:px-3"
+        className="flex h-11 min-w-11 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-2 text-sm font-medium text-gray-600 lg:h-9 lg:px-2.5 transition-all hover:bg-green-50 hover:text-green-700 sm:px-3"
       >
         <MessageSquarePlus className="h-4 w-4" />
-        <span className="hidden sm:inline">Feedback</span>
+        <span className="hidden lg:inline">Feedback</span>
       </button>
 
       {open && (
@@ -88,7 +88,7 @@ export function FeedbackButton() {
                 type="button"
                 onClick={() => setOpen(false)}
                 aria-label="Close feedback dialog"
-                className="rounded-lg p-1 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600"
+                className="-mr-2 -mt-2 flex h-11 w-11 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 lg:h-8 lg:w-8"
               >
                 <X className="h-4 w-4" />
               </button>
@@ -118,7 +118,7 @@ export function FeedbackButton() {
               <button
                 type="submit"
                 disabled={mutation.isPending || !message.trim()}
-                className="flex items-center justify-center gap-2 rounded-xl bg-green-600 py-2.5 text-sm font-bold text-white transition-colors hover:bg-green-700 disabled:opacity-60"
+                className="flex min-h-11 items-center justify-center gap-2 rounded-xl bg-green-600 text-sm font-bold text-white transition-colors hover:bg-green-700 disabled:opacity-60"
               >
                 {mutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
                 Send feedback

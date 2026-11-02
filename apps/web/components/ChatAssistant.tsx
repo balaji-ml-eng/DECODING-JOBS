@@ -404,7 +404,7 @@ export function ChatAssistant({
                 onClick={() => setActiveResumeId(null)}
                 aria-label="Detach resume"
                 title="Detach resume"
-                className="mr-1 rounded-full p-1 transition-colors hover:bg-green-200/60"
+                className="flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-green-200/60 lg:h-7 lg:w-7"
               >
                 <X className="h-2.5 w-2.5" />
               </button>
@@ -457,6 +457,7 @@ export function ChatAssistant({
           onClick={() => fileInputRef.current?.click()}
           disabled={isBusy}
           title="Attach your resume"
+          aria-label="Attach your resume"
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500 transition-all hover:border-green-200 hover:bg-green-50 hover:text-green-700 disabled:opacity-40"
         >
           <Paperclip className="h-4 w-4" />
@@ -483,6 +484,7 @@ export function ChatAssistant({
         />
         <button
           type="submit"
+          aria-label="Send message"
           disabled={isBusy || !input.trim()}
           className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md shadow-green-500/20 transition-all hover:shadow-lg active:scale-95 disabled:opacity-40"
         >
@@ -525,7 +527,7 @@ export function ChatAssistant({
             onClick={onOpenHistory}
             title="Conversation history"
             aria-label="Conversation history"
-            className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-gray-500 transition-all hover:bg-green-50 hover:text-green-700 lg:hidden"
+            className="flex h-11 w-11 shrink-0 lg:h-8 lg:w-8 items-center justify-center rounded-lg text-gray-500 transition-all hover:bg-green-50 hover:text-green-700 lg:hidden"
           >
             <PanelLeft className="h-4 w-4" />
           </button>
@@ -584,7 +586,7 @@ export function ChatAssistant({
                   key={prompt}
                   type="button"
                   onClick={() => send(prompt)}
-                  className="rounded-full border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-600 transition-all hover:border-green-200 hover:bg-green-50 hover:text-green-700"
+                  className="min-h-11 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium lg:min-h-8 text-gray-600 transition-all hover:border-green-200 hover:bg-green-50 hover:text-green-700"
                 >
                   {prompt}
                 </button>

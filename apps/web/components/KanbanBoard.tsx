@@ -110,7 +110,7 @@ function RoundStepper({ applicationId, round }: { applicationId: number; round: 
         type="button"
         disabled={mutation.isPending}
         onClick={() => mutation.mutate({ applicationId, interviewRound: round + 1 })}
-        className="ml-auto flex items-center gap-0.5 rounded-full bg-green-50 px-2 py-0.5 text-xs font-bold text-green-700 transition-all hover:bg-green-100 active:scale-95"
+        className="ml-auto flex min-h-11 items-center gap-0.5 rounded-full bg-green-50 px-3 text-xs font-bold lg:min-h-7 lg:px-2 text-green-700 transition-all hover:bg-green-100 active:scale-95"
       >
         <Plus className="h-2.5 w-2.5" />
         Next round
@@ -224,14 +224,14 @@ function KanbanCard({ card, index }: { card: ApplicationBoardCard; index: number
               type="button"
               disabled={markAppliedMutation.isPending}
               onClick={() => markAppliedMutation.mutate()}
-              className="flex flex-1 items-center justify-center gap-1 rounded-lg bg-amber-600 py-1 text-xs font-bold text-white transition-colors hover:bg-amber-700 disabled:opacity-60"
+              className="flex min-h-11 flex-1 items-center justify-center gap-1 rounded-lg bg-amber-600 text-xs font-bold lg:min-h-8 text-white transition-colors hover:bg-amber-700 disabled:opacity-60"
             >
               {markAppliedMutation.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : "Yes, mark applied"}
             </button>
             <button
               type="button"
               onClick={() => setNudgeDismissed(true)}
-              className="rounded-lg px-2 py-1 text-xs font-semibold text-amber-700 transition-colors hover:bg-amber-100"
+              className="min-h-11 rounded-lg px-3 text-xs font-semibold text-amber-700 lg:min-h-8 transition-colors hover:bg-amber-100"
             >
               Not yet
             </button>
@@ -340,7 +340,7 @@ function ForwardingBanner() {
       <div className="flex flex-wrap items-center gap-2 rounded-xl border border-dashed border-gray-200 bg-gray-50/60 px-3.5 py-2.5 text-xs text-gray-500">
         <Mail className="h-3.5 w-3.5 shrink-0" />
         <span className="flex-1">Email auto-tracking isn&apos;t set up yet — advance rounds with the button on each card for now.</span>
-        <button type="button" onClick={() => setDismissed(true)} className="shrink-0 text-gray-500 hover:text-gray-500">
+        <button type="button" onClick={() => setDismissed(true)} aria-label="Dismiss" className="flex h-11 w-11 shrink-0 items-center justify-center text-gray-500 hover:text-gray-700 lg:h-8 lg:w-8">
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
@@ -360,12 +360,12 @@ function ForwardingBanner() {
           setCopied(true);
           setTimeout(() => setCopied(false), 1500);
         }}
-        className="flex shrink-0 items-center gap-1 rounded-lg bg-white px-2 py-1 text-xs font-bold text-green-700 shadow-sm transition-all hover:shadow-md active:scale-95"
+        className="flex min-h-11 shrink-0 items-center gap-1 rounded-lg bg-white px-3 text-xs font-bold text-green-700 lg:min-h-8 shadow-sm transition-all hover:shadow-md active:scale-95"
       >
         {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
         {copied ? "Copied" : "Copy"}
       </button>
-      <button type="button" onClick={() => setDismissed(true)} className="shrink-0 text-green-600 hover:text-green-700">
+      <button type="button" onClick={() => setDismissed(true)} aria-label="Dismiss" className="flex h-11 w-11 shrink-0 items-center justify-center text-green-600 hover:text-green-700 lg:h-8 lg:w-8">
         <X className="h-3.5 w-3.5" />
       </button>
     </div>
@@ -465,7 +465,7 @@ export function KanbanBoard() {
         <button
           type="button"
           onClick={() => queryClient.invalidateQueries({ queryKey: ["applicationBoard", email] })}
-          className="rounded-lg bg-gray-100 px-3 py-1.5 text-xs font-semibold text-gray-600 transition-all hover:bg-gray-200"
+          className="min-h-11 rounded-lg bg-gray-100 px-4 text-xs font-semibold text-gray-600 lg:min-h-9 transition-all hover:bg-gray-200"
         >
           Retry
         </button>

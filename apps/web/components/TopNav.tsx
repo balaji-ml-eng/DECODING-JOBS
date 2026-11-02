@@ -42,8 +42,10 @@ function NavLink({
   return (
     <Link
       href={href}
+      aria-label={label}
+      title={label}
       className={cn(
-        "relative items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-all sm:px-3",
+        "relative h-11 min-w-11 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-2 text-sm font-medium transition-all lg:h-9 lg:px-3",
         // The bar is tuned to fit a 360px header exactly; anything added here
         // at the base breakpoint overflows it. `hideBelowSm` retires a link on
         // phones when the same destination is already reachable elsewhere.
@@ -55,14 +57,14 @@ function NavLink({
         <span className="absolute inset-0 rounded-lg bg-green-50" style={{ animation: "navActiveFadeIn 0.2s ease-out" }} />
       )}
       <Icon className="relative h-4 w-4" />
-      <span className="relative hidden sm:inline">{label}</span>
+      <span className="relative hidden lg:inline">{label}</span>
       {badge !== undefined && badge > 0 && (
-        <span className="relative rounded-full bg-green-100 px-1.5 py-0.5 text-xs font-bold text-green-700">
+        <span className="absolute right-0 top-0.5 rounded-full bg-green-100 px-1.5 py-0.5 text-[10px] font-bold text-green-700 lg:relative lg:right-auto lg:top-auto lg:text-xs">
           {badge}
         </span>
       )}
       {active && (
-        <span className="absolute inset-x-2.5 -bottom-[9px] h-0.5 rounded-full bg-green-500 sm:inset-x-3" />
+        <span className="absolute inset-x-2 -bottom-[6px] h-0.5 rounded-full bg-green-500 md:-bottom-[10px] lg:inset-x-3" />
       )}
     </Link>
   );
@@ -75,8 +77,10 @@ function AiAssistantLink({ active }: { active: boolean }) {
   return (
     <Link
       href="/assistant"
+      aria-label="AI Assistant"
+      title="AI Assistant"
       className={cn(
-        "relative flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-all sm:px-3",
+        "relative flex h-11 min-w-11 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-2 text-sm font-medium transition-all lg:h-9 lg:px-3",
         active ? "text-green-700" : "text-gray-600 hover:bg-green-50 hover:text-green-700"
       )}
     >
@@ -92,9 +96,9 @@ function AiAssistantLink({ active }: { active: boolean }) {
         strokeWidth={active ? 2.2 : 1.9}
         aria-hidden="true"
       />
-      <span className="relative hidden sm:inline">AI Assistant</span>
+      <span className="relative hidden lg:inline">AI Assistant</span>
       {active && (
-        <span className="absolute inset-x-2.5 -bottom-[9px] h-0.5 rounded-full bg-green-500 sm:inset-x-3" />
+        <span className="absolute inset-x-2 -bottom-[6px] h-0.5 rounded-full bg-green-500 md:-bottom-[10px] lg:inset-x-3" />
       )}
     </Link>
   );
@@ -120,13 +124,16 @@ function ForCompaniesMenu({ active }: { active: boolean }) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
+        aria-label="For Companies"
+        aria-haspopup="menu"
+        aria-expanded={open}
         className={cn(
-          "relative flex items-center gap-2 rounded-lg px-2.5 py-1.5 text-sm font-medium transition-all sm:px-3",
+          "relative flex h-11 min-w-11 items-center justify-center gap-2 whitespace-nowrap rounded-lg px-2 text-sm font-medium transition-all lg:h-9 lg:px-3",
           active || open ? "text-green-700 bg-green-50" : "text-gray-600 hover:bg-green-50 hover:text-green-700"
         )}
       >
         <Building2 className="h-4 w-4" />
-        <span className="hidden sm:inline">For Companies</span>
+        <span className="hidden lg:inline">For Companies</span>
         <ChevronDown className={cn("h-3 w-3 transition-transform", open && "rotate-180")} />
       </button>
 
@@ -208,7 +215,8 @@ function AccountMenu() {
     return (
       <Link
         href="/tracker"
-        className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-sm font-medium text-gray-600 transition-all hover:bg-green-50 hover:text-green-700 sm:px-3"
+        aria-label="Sign in"
+        className="flex h-11 min-w-11 items-center justify-center gap-1.5 whitespace-nowrap rounded-lg px-2 text-sm font-medium text-gray-600 lg:h-9 md:px-2.5 transition-all hover:bg-green-50 hover:text-green-700 sm:px-3"
       >
         <UserRound className="h-4 w-4" />
         <span className="hidden sm:inline">Sign in</span>
@@ -225,7 +233,7 @@ function AccountMenu() {
         aria-expanded={open}
         aria-label={`Account menu — signed in as ${email}`}
         className={cn(
-          "relative flex items-center gap-2 rounded-lg px-2 py-1.5 text-sm font-medium transition-all sm:px-2.5",
+          "relative flex h-11 min-w-11 items-center justify-center gap-2 rounded-lg px-1 text-sm font-medium transition-all lg:h-9 sm:px-2.5",
           open ? "bg-green-50 text-green-700" : "text-gray-600 hover:bg-green-50 hover:text-green-700"
         )}
       >
@@ -300,6 +308,21 @@ export function TopNav() {
     refetchInterval: pathname === "/tracker" ? LIVE_POLL_INTERVAL_MS : false,
   });
 
+  const brandClass = "flex min-h-11 min-w-11 items-center gap-2 mr-2 shrink-0 sm:gap-2.5 lg:mr-8 lg:min-h-9";
+  const brand = (
+      <>
+        {/* Brand mark — deliberately NOT a MapPin. The pin glyph is the city
+            filter and the location rows; reusing it here made the product's
+            own logo read as "a place". A DJ monogram is unmistakably the mark. */}
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-green-500 to-green-600 shadow-md shadow-green-500/20 transition-transform hover:scale-105">
+          <span className="text-xs font-black leading-none tracking-tight text-white">DJ</span>
+        </div>
+        <span className="hidden text-sm font-bold tracking-tight text-gray-900 sm:inline">
+          DECODING<span className="text-green-700">JOBS</span>
+        </span>
+      </>
+  );
+
   return (
     <header
       className="relative flex h-14 shrink-0 items-center border-b border-green-100 px-3 sm:px-6"
@@ -315,17 +338,13 @@ export function TopNav() {
       {/* Logo / Brand — doubles as the home/map link */}
       {/* Tighter margins at the base breakpoint: icon-only labels plus two
           separators and a toggle overflow a 360px header by ~9px otherwise. */}
-      <Link href="/" className="flex items-center gap-2 mr-2 shrink-0 sm:gap-2.5 sm:mr-8">
-        {/* Brand mark — deliberately NOT a MapPin. The pin glyph is the city
-            filter and the location rows; reusing it here made the product's
-            own logo read as "a place". A DJ monogram is unmistakably the mark. */}
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-gradient-to-br from-green-500 to-green-600 shadow-md shadow-green-500/20 transition-transform hover:scale-105">
-          <span className="text-xs font-black leading-none tracking-tight text-white">DJ</span>
-        </div>
-        <span className="hidden text-sm font-bold tracking-tight text-gray-900 sm:inline">
-          DECODING<span className="text-green-700">JOBS</span>
-        </span>
-      </Link>
+      {/* Already on the map, the mark is just a mark: a link back to the same
+          page only looks like it should do something. */}
+      {pathname === "/" ? (
+        <div className={brandClass}>{brand}</div>
+      ) : (
+        <Link href="/" aria-label="DECODING JOBS home" className={brandClass}>{brand}</Link>
+      )}
 
       <div className="flex items-center gap-0.5 ml-auto sm:gap-1">
         <AiAssistantLink active={pathname === "/assistant"} />
@@ -351,11 +370,11 @@ export function TopNav() {
 
         <FeedbackButton />
 
-        <div className="mx-1 h-5 w-px bg-gray-200 sm:mx-2" />
+        <div className="mx-0.5 h-5 w-px bg-gray-200 lg:mx-2" />
 
         <ForCompaniesMenu active={pathname === "/register" || pathname === "/recruiters"} />
 
-        <div className="mx-1 h-5 w-px bg-gray-200 sm:mx-2" />
+        <div className="mx-0.5 h-5 w-px bg-gray-200 lg:mx-2" />
 
         <AccountMenu />
       </div>

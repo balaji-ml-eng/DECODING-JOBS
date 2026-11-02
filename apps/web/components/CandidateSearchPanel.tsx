@@ -26,7 +26,7 @@ const WORK_MODES = [
 const ANY_NOTICE_PERIODS = [{ value: "", label: "Any notice period" }, ...NOTICE_PERIODS.filter((n) => n.value)];
 
 const selectCls =
-  "flex h-9 rounded-lg border border-gray-200 bg-white px-2.5 text-xs text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400/40";
+  "min-h-11 lg:min-h-10 flex h-9 rounded-lg border border-gray-200 bg-white px-2.5 text-xs text-gray-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400/40";
 
 function LinkBadge({ icon: Icon, verified }: { icon: React.ElementType; verified: boolean }) {
   return (
@@ -100,7 +100,7 @@ function CandidateCard({ candidate, onView }: { candidate: CandidateSearchResult
           type="button"
           onClick={onView}
           className={cn(
-            "rounded-lg px-3 py-1.5 text-xs font-bold shadow-sm transition-all",
+            "min-h-11 rounded-lg px-3 text-xs font-bold shadow-sm transition-all lg:min-h-8",
             candidate.already_unlocked
               ? "bg-gray-900 text-white hover:bg-gray-800"
               : "bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-green-500/25 hover:shadow-md"
@@ -159,7 +159,7 @@ export function CandidateSearchPanel() {
           <button
             type="button"
             onClick={clearRecruiterCompany}
-            className="flex items-center gap-1.5 rounded-lg px-2.5 py-1.5 text-xs font-semibold text-gray-500 hover:bg-gray-50 hover:text-gray-600"
+            className="flex min-h-11 items-center gap-1.5 rounded-lg px-2.5 text-xs font-semibold text-gray-500 lg:min-h-8 hover:bg-gray-50 hover:text-gray-600"
           >
             <LogOut className="h-3.5 w-3.5" /> Switch company
           </button>
@@ -172,7 +172,7 @@ export function CandidateSearchPanel() {
               placeholder="Role or skill (e.g. Backend Engineer, React)"
               value={roleInput}
               onChange={(e) => handleRoleInput(e.target.value)}
-              className="h-9 pl-8 text-xs"
+              className="pl-8 text-xs"
             />
           </div>
           <select className={selectCls} value={city} onChange={(e) => setCity(e.target.value)}>
@@ -188,7 +188,7 @@ export function CandidateSearchPanel() {
             placeholder="Min yrs exp"
             value={experienceMin}
             onChange={(e) => setExperienceMin(e.target.value)}
-            className="h-9 w-28 text-xs"
+            className="w-28 text-xs"
           />
           <select className={selectCls} value={noticePeriod} onChange={(e) => setNoticePeriod(e.target.value)}>
             {ANY_NOTICE_PERIODS.map((n) => <option key={n.value} value={n.value}>{n.label}</option>)}

@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function ProfilePage() {
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-white">
+    <div className="flex h-dvh w-screen flex-col overflow-hidden bg-white">
       <TopNav />
       <ProfileWorkspace />
     </div>

@@ -52,7 +52,7 @@ function FieldLabel({ children, required }: { children: React.ReactNode; require
 }
 
 const selectCls =
-  "flex h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400/40";
+  "min-h-11 lg:min-h-10 flex h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400/40";
 const textareaCls =
   "flex w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-800 placeholder:text-gray-500 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400/40";
 
@@ -69,7 +69,7 @@ function MoreDetailsToggle({
     <button
       type="button"
       onClick={onToggle}
-      className="flex items-center gap-1.5 self-start text-xs font-bold text-green-700 transition-colors hover:text-green-700"
+      className="min-h-11 lg:min-h-8 flex items-center gap-1.5 self-start text-xs font-bold text-green-700 transition-colors hover:text-green-700"
     >
       {open ? <ChevronDown className="h-3.5 w-3.5" /> : <Plus className="h-3.5 w-3.5" />}
       {label}

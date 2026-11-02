@@ -10,7 +10,7 @@ export const metadata: Metadata = {
 
 export default function RecruitersPage() {
   return (
-    <div className="flex h-screen w-screen flex-col overflow-hidden bg-white">
+    <div className="flex h-dvh w-screen flex-col overflow-hidden bg-white">
       <TopNav />
       <RecruiterWorkspace />
     </div>

@@ -11,6 +11,7 @@ import {
   Minus,
   LocateFixed,
   Loader2,
+  MapPinOff,
   AlertTriangle,
   Briefcase,
   MapPin,
@@ -147,6 +148,22 @@ const CITY_CENTERS: Record<string, CityConfig> = {
 
 function getCityCenter(city: string): CityConfig {
   return (CITY_CENTERS as Record<string, CityConfig>)[city] ?? CITY_CENTERS["Bengaluru"]!;
+}
+
+const DEFAULT_CITY = "Bengaluru";
+
+// Wide enough for every listed city. A facet filter's counts are city-wide, so
+// its results have to be too: scoped to the viewport, "Pallavaram 2" came back
+// empty whenever the map was zoomed in somewhere else.
+const INDIA_BBOX: BoundingBox = { minLat: 6, minLng: 68, maxLat: 37, maxLng: 98 };
+
+function supportsWebGL() {
+  try {
+    const canvas = document.createElement("canvas");
+    return !!(canvas.getContext("webgl2") || canvas.getContext("webgl"));
+  } catch {
+    return false;
+  }
 }
 
 const MAP_STYLE_URL = "https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json";
@@ -674,16 +691,15 @@ const ClusterPin = React.memo(function ClusterPin({
 
 function FilterChip({ label, onRemove }: { label: string; onRemove: () => void }) {
   return (
-    <span className="flex items-center gap-1 rounded-full bg-green-600 py-1 pl-2.5 pr-1.5 text-xs font-bold text-white">
+    <button
+      type="button"
+      onClick={onRemove}
+      aria-label={`Remove filter: ${label}`}
+      className="flex min-h-11 items-center gap-1.5 rounded-full bg-green-600 px-3 text-xs font-bold text-white transition-colors hover:bg-green-700 lg:min-h-7"
+    >
       {label}
-      <button
-        type="button"
-        onClick={onRemove}
-        className="flex h-3.5 w-3.5 items-center justify-center rounded-full bg-white/20 transition-colors hover:bg-white/35"
-      >
-        <X className="h-2 w-2" />
-      </button>
-    </span>
+      <X className="h-3 w-3" aria-hidden="true" />
+    </button>
   );
 }
 
@@ -796,31 +812,78 @@ function CompanyGridView({
   companies,
   selectedCompanyId,
   onSelect,
+  loading,
+  error,
+  onRetry,
+  notice,
+  total,
 }: {
   companies: Company[];
   selectedCompanyId: number | null;
   onSelect: (id: number) => void;
+  loading: boolean;
+  error: boolean;
+  onRetry: () => void;
+  notice?: string;
+  /** The city's real total, when the list holds only the first part of it. */
+  total?: number;
 }) {
-  if (companies.length === 0) {
-    return (
-      <div className="flex h-full w-full flex-col items-center justify-center gap-2 text-center">
-        <Building2 className="h-8 w-8 text-gray-200" />
-        <p className="text-sm font-medium text-gray-500">No companies match these filters</p>
-      </div>
-    );
-  }
+  const panelOpen = selectedCompanyId !== null;
+  // Top padding clears the toolbar, which is one row on a phone (the rest sits
+  // in the bottom bar, hence pb-24), wraps to two at tablet width, and needs a
+  // second row at laptop width only while the company panel narrows it.
+  const frame = cn(
+    "scroll-thin h-full w-full overflow-y-auto pb-24 pt-[68px] md:pb-6 md:pt-32 xl:pt-20",
+    panelOpen && "lg:pr-[396px] xl:pt-32 min-[1400px]:pt-20"
+  );
   return (
-    <div className="scroll-thin h-full w-full overflow-y-auto pb-6 pt-24">
-      <div className="mx-auto grid max-w-6xl grid-cols-1 gap-3 px-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-        {companies.map((company) => (
-          <CompanyGridCard
-            key={company.id}
-            company={company}
-            isSelected={company.id === selectedCompanyId}
-            onClick={() => onSelect(company.id)}
-          />
-        ))}
-      </div>
+    <div className={frame}>
+      {notice && (
+        <div role="status" className="mx-auto mb-3 flex max-w-6xl items-start gap-2 px-3 text-sm text-gray-600 md:px-4">
+          <MapPinOff className="mt-0.5 h-4 w-4 shrink-0 text-gray-500" aria-hidden="true" />
+          {notice}
+        </div>
+      )}
+      {error ? (
+        <div className="flex flex-col items-center gap-3 px-6 py-16 text-center">
+          <AlertTriangle className="h-8 w-8 text-red-400" aria-hidden="true" />
+          <p className="text-sm font-medium text-gray-600">Couldn&apos;t load companies</p>
+          <button
+            type="button"
+            onClick={onRetry}
+            className="h-11 rounded-xl bg-green-600 px-5 text-sm font-semibold text-white transition-colors hover:bg-green-700 lg:h-10"
+          >
+            Try again
+          </button>
+        </div>
+      ) : loading ? (
+        <div className="mx-auto grid max-w-6xl grid-cols-1 gap-3 px-3 sm:grid-cols-2 md:px-4 lg:grid-cols-3 xl:grid-cols-4" aria-hidden="true">
+          {Array.from({ length: 8 }, (_, i) => (
+            <div key={i} className="h-40 animate-pulse rounded-xl border border-gray-100 bg-white" />
+          ))}
+        </div>
+      ) : companies.length === 0 ? (
+        <div className="flex flex-col items-center gap-2 px-6 py-16 text-center">
+          <Building2 className="h-8 w-8 text-gray-200" aria-hidden="true" />
+          <p className="text-sm font-medium text-gray-500">No companies match these filters</p>
+        </div>
+      ) : (
+        <>
+          <p className="mx-auto mb-2 max-w-6xl px-3 text-xs font-semibold text-gray-500 md:hidden">
+            {total ? `Showing ${companies.length} of ${total} companies` : `${companies.length} compan${companies.length === 1 ? "y" : "ies"}`}
+          </p>
+          <div className="mx-auto grid max-w-6xl grid-cols-1 gap-3 px-3 sm:grid-cols-2 md:px-4 lg:grid-cols-3 xl:grid-cols-4">
+            {companies.map((company) => (
+              <CompanyGridCard
+                key={company.id}
+                company={company}
+                isSelected={company.id === selectedCompanyId}
+                onClick={() => onSelect(company.id)}
+              />
+            ))}
+          </div>
+        </>
+      )}
     </div>
   );
 }
@@ -844,14 +907,14 @@ export function MapWorkspace() {
   const [selectedArea, setSelectedArea] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [selectedDepartment, setSelectedDepartment] = useState<string | null>(null);
-  const [selectedCity, setSelectedCity] = useState("Bengaluru");
+  const [selectedCity, setSelectedCity] = useState(DEFAULT_CITY);
   const [cityDropdownOpen, setCityDropdownOpen] = useState(false);
   const [hiringOnly, setHiringOnly] = useState(false);
   const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
   const isFirstRender = useRef(true);
   const [hoveredId, setHoveredId] = useState<number | null>(null);
   const [hoveredCity, setHoveredCity] = useState<string | null>(null);
-  const [zoom, setZoom] = useState(6);
+  const [zoom, setZoom] = useState(getCityCenter(DEFAULT_CITY).zoom);
   const [viewMode, setViewMode] = useState<"map" | "grid">("map");
   // A single click on a cluster shows every company inside it as a pickable
   // list, right there — no repeated click-to-zoom-to-cluster-again cycle to
@@ -862,6 +925,80 @@ export function MapWorkspace() {
 
   const selectedCompanyId = useMapSelectionStore((s) => s.selectedCompanyId);
   const setSelectedCompanyId = useMapSelectionStore((s) => s.setSelectedCompanyId);
+
+  // null until checked on the client, so the server and first client render agree.
+  const [webglOk, setWebglOk] = useState<boolean | null>(null);
+  const [mapLoaded, setMapLoaded] = useState(false);
+  const [mapSlow, setMapSlow] = useState(false);
+  useEffect(() => {
+    const ok = supportsWebGL();
+    setWebglOk(ok);
+    if (!ok) setViewMode("grid");
+  }, []);
+  useEffect(() => {
+    if (!webglOk || mapLoaded) return;
+    const timer = setTimeout(() => setMapSlow(true), 15_000);
+    return () => clearTimeout(timer);
+  }, [webglOk, mapLoaded]);
+
+  // The view lives in the URL, so a refresh keeps it and a company can be shared
+  // by link. Read in an effect because this page is prerendered without a query.
+  const [urlRestored, setUrlRestored] = useState(false);
+  const pendingArea = useRef<string | null>(null);
+  const companyInUrl = useRef<number | null>(null);
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const city = params.get("city");
+    const area = params.get("area");
+    if (city && CITY_CENTERS[city]) {
+      appliedPreferredCity.current = true;
+      setSelectedCity(city);
+      // Changing city clears the area, so hand it over to re-apply afterwards.
+      if (city !== DEFAULT_CITY) pendingArea.current = area;
+    }
+    if (params.get("view") === "grid") setViewMode("grid");
+    setSelectedType(params.get("type"));
+    setSelectedStage(params.get("stage"));
+    setSelectedSector(params.get("sector"));
+    setSelectedDepartment(params.get("department"));
+    setSelectedArea(area);
+    const company = Number(params.get("company"));
+    if (Number.isInteger(company) && company > 0) {
+      companyInUrl.current = company;
+      setSelectedCompanyId(company);
+    }
+    setUrlRestored(true);
+  }, [setSelectedCompanyId]);
+
+  useEffect(() => {
+    if (!urlRestored) return;
+    const params = new URLSearchParams();
+    if (selectedCity !== DEFAULT_CITY) params.set("city", selectedCity);
+    if (viewMode === "grid") params.set("view", "grid");
+    if (selectedType) params.set("type", selectedType);
+    if (selectedStage) params.set("stage", selectedStage);
+    if (selectedArea) params.set("area", selectedArea);
+    if (selectedSector) params.set("sector", selectedSector);
+    if (selectedDepartment) params.set("department", selectedDepartment);
+    if (selectedCompanyId !== null) params.set("company", String(selectedCompanyId));
+    const query = params.toString();
+    const url = query ? `/?${query}` : "/";
+    const opening = selectedCompanyId !== null && companyInUrl.current === null;
+    companyInUrl.current = selectedCompanyId;
+    if (url === window.location.pathname + window.location.search) return;
+    // Opening a company is a step the phone's Back button should undo.
+    if (opening) window.history.pushState(null, "", url);
+    else window.history.replaceState(null, "", url);
+  }, [urlRestored, selectedCity, viewMode, selectedType, selectedStage, selectedArea, selectedSector, selectedDepartment, selectedCompanyId]);
+
+  useEffect(() => {
+    const onPopState = () => {
+      const company = Number(new URLSearchParams(window.location.search).get("company"));
+      setSelectedCompanyId(Number.isInteger(company) && company > 0 ? company : null);
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [setSelectedCompanyId]);
 
   const identityEmail = useIdentityStore((s) => s.email);
   const { data: preferences } = useQuery({
@@ -936,10 +1073,11 @@ export function MapWorkspace() {
         maxLng: center.longitude + d,
       };
     });
+    if (webglOk === false) return;
     if (mapRef.current) { updateBoundsFromMap(); return; }
     const id = setInterval(() => { if (mapRef.current) { updateBoundsFromMap(); clearInterval(id); } }, 100);
     return () => clearInterval(id);
-  }, [selectedCity, updateBoundsFromMap]);
+  }, [selectedCity, updateBoundsFromMap, webglOk]);
 
   useEffect(() => {
     if (isFirstRender.current) { isFirstRender.current = false; return; }
@@ -947,13 +1085,16 @@ export function MapWorkspace() {
     mapRef.current?.flyTo({ center: [c.longitude, c.latitude], zoom: c.zoom, duration: 800 });
     // Area values are city-specific ("Koramangala" only exists in Bengaluru) —
     // carrying a stale selection across a city switch silently zeroes results.
-    setSelectedArea(null);
+    setSelectedArea(pendingArea.current);
+    pendingArea.current = null;
   }, [selectedCity]);
 
-  const { data: companiesResult, isLoading, isError, refetch: refetchCompanies } = useQuery({
-    queryKey: ["companies", "search", bbox, selectedSector, selectedCity, hiringOnly, selectedStage, selectedArea, selectedType, selectedDepartment],
+  const facetActive = !!(selectedType || selectedStage || selectedArea || selectedSector || selectedDepartment);
+  const queryBox = facetActive || webglOk === false ? INDIA_BBOX : bbox;
+  const { data: companiesResult, isLoading, isError, isPlaceholderData, refetch: refetchCompanies } = useQuery({
+    queryKey: ["companies", "search", queryBox, selectedSector, selectedCity, hiringOnly, selectedStage, selectedArea, selectedType, selectedDepartment],
     queryFn: () =>
-      searchCompaniesInBoundingBox(bbox as BoundingBox, {
+      searchCompaniesInBoundingBox(queryBox as BoundingBox, {
         sector: selectedSector || undefined,
         city: selectedCity || undefined,
         hiring_only: hiringOnly || undefined,
@@ -962,14 +1103,46 @@ export function MapWorkspace() {
         company_type: selectedType || undefined,
         department: selectedDepartment || undefined,
       }),
-    enabled: bbox !== null,
+    enabled: queryBox !== null,
     placeholderData: keepPreviousData,
   });
+
+  // The free API host sleeps when idle and takes up to a minute to wake, which
+  // otherwise looks exactly like an empty, broken app.
+  const [slowLoad, setSlowLoad] = useState(false);
+  useEffect(() => {
+    if (!isLoading) { setSlowLoad(false); return; }
+    const timer = setTimeout(() => setSlowLoad(true), 4_000);
+    return () => clearTimeout(timer);
+  }, [isLoading]);
 
   const companies = companiesResult?.companies;
   // The server truncated this viewport at its per-view ceiling — the count
   // below is a floor, not the total, and the user needs to be told that.
   const companiesCapped = companiesResult?.capped ?? false;
+
+  // Choosing a filter brings its results into view, wherever the map was.
+  const fitPending = useRef(false);
+  useEffect(() => {
+    if (facetActive) fitPending.current = true;
+  }, [facetActive, selectedType, selectedStage, selectedArea, selectedSector, selectedDepartment]);
+  useEffect(() => {
+    if (!fitPending.current || isPlaceholderData || !companies?.length || !mapRef.current) return;
+    fitPending.current = false;
+    const lngs = companies.map((c) => c.longitude);
+    const lats = companies.map((c) => c.latitude);
+    const phone = window.innerWidth < 768;
+    mapRef.current.fitBounds(
+      [[Math.min(...lngs), Math.min(...lats)], [Math.max(...lngs), Math.max(...lats)]],
+      {
+        padding: phone
+          ? { top: 90, bottom: 110, left: 40, right: 40 }
+          : { top: 140, bottom: 60, left: mobileFiltersOpen ? 280 : 60, right: 80 },
+        maxZoom: 14,
+        duration: 600,
+      }
+    );
+  }, [companies, isPlaceholderData, mobileFiltersOpen]);
 
   // Job search query
   const { data: jobSearchResults } = useQuery({
@@ -1181,6 +1354,7 @@ export function MapWorkspace() {
 
   const hiringCount = filteredCompanies?.filter((c) => c.active_job_count > 0).length ?? 0;
   const totalCount = filteredCompanies?.length ?? 0;
+  const selectedCityCount = (cities ?? []).find((c) => c.city === selectedCity)?.count;
   // City-level data for overview mode (zoomed out)
   const isOverviewMode = zoom < 8;
   const { data: allCities } = useQuery({ queryKey: ["cities"], queryFn: getCities });
@@ -1314,10 +1488,16 @@ export function MapWorkspace() {
             companies={filteredCompanies ?? []}
             selectedCompanyId={selectedCompanyId}
             onSelect={setSelectedCompanyId}
+            loading={isLoading || queryBox === null}
+            error={isError}
+            onRetry={() => refetchCompanies()}
+            total={companiesCapped && !facetActive && !searchQuery ? selectedCityCount : undefined}
+            notice={webglOk === false ? "This browser can't show the map, so we're showing the list instead." : undefined}
           />
         </div>
       )}
 
+      {webglOk && (
       <Map
         ref={mapRef}
         reuseMaps
@@ -1332,19 +1512,11 @@ export function MapWorkspace() {
           pointerEvents: viewMode === "map" ? "auto" : "none",
         }}
         initialViewState={{
-          // Framed so every one of the 15 city pins is *clickable* at startup,
-          // not merely present in the DOM. MapLibre renders 512px tiles, so zoom
-          // controls how much latitude fits: at 4.8 the visible band was lat
-          // 8.4°–28.6°, which clipped Delhi NCR (28.36°, the northern extreme)
-          // behind the site header and Thiruvananthapuram (8.41°, the southern
-          // one) against the bottom edge. Zoom 4.5 plus a touch of north bias
-          // puts the topmost pin at ~y141 and the bottom-most at ~y821, clear of
-          // both the header (0–56) and the floating toolbar (72–116). Verified
-          // by the map audit, which asserts every pin's centre is on-screen *and*
-          // the topmost element at that point.
-          longitude: 79.0,
-          latitude: 18.85,
-          zoom: 4.5,
+          // Opens on the city the picker names. Zooming out still reaches the
+          // national view and its city pins.
+          longitude: getCityCenter(DEFAULT_CITY).longitude,
+          latitude: getCityCenter(DEFAULT_CITY).latitude,
+          zoom: getCityCenter(DEFAULT_CITY).zoom,
         }}
         mapStyle={MAP_STYLE_URL}
         // Tile-handling options — the one place the map was still costing frames
@@ -1359,7 +1531,7 @@ export function MapWorkspace() {
         fadeDuration={0}
         maxTileCacheSize={256}
         refreshExpiredTiles={false}
-        onLoad={updateBoundsFromMap}
+        onLoad={() => { setMapLoaded(true); updateBoundsFromMap(); }}
         onMoveEnd={updateBoundsFromMap}
         onZoom={(e) => {
           // Clusters are keyed on Math.round(zoom), so recomputing on every
@@ -1496,12 +1668,18 @@ export function MapWorkspace() {
           const [lng, lat] = clusterFeature.geometry.coordinates as [number, number];
           const leaves = clusterIndex.getLeaves(openClusterId, 50);
           const totalCount = (clusterFeature as ClusterFeature<{ hiringCount: number }>).properties.point_count;
+          // A fixed upward popup slid under the toolbar for anything near the
+          // top of the map. 360px is the popup's height plus the toolbar's.
+          const point = mapRef.current?.project([lng, lat]);
+          const mapWidth = mapRef.current?.getContainer().clientWidth ?? 0;
+          const vertical = point && point.y < 360 ? "top" : "bottom";
+          const horizontal = !point ? "" : point.x < 140 ? "-left" : point.x > mapWidth - 140 ? "-right" : "";
 
           return (
             <Popup
               longitude={lng}
               latitude={lat}
-              anchor="bottom"
+              anchor={`${vertical}${horizontal}` as "bottom"}
               offset={16}
               closeButton={false}
               onClose={() => setOpenClusterId(null)}
@@ -1513,7 +1691,8 @@ export function MapWorkspace() {
                   <button
                     type="button"
                     onClick={() => setOpenClusterId(null)}
-                    className="flex h-5 w-5 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100"
+                    aria-label="Close list"
+                    className="flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100"
                   >
                     <X className="h-3 w-3" />
                   </button>
@@ -1531,7 +1710,7 @@ export function MapWorkspace() {
                           setSelectedCompanyId(company.id);
                           setOpenClusterId(null);
                         }}
-                        className="flex items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-green-50"
+                        className="flex min-h-11 items-center gap-2 rounded-lg px-2 py-1.5 text-left transition-colors hover:bg-green-50"
                       >
                         <div
                           className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg text-xs font-bold text-white"
@@ -1562,25 +1741,31 @@ export function MapWorkspace() {
           );
         })()}
       </Map>
+      )}
 
       {/* ── Top toolbar ── */}
       {/* z-30, above the grid overlay's z-20. The grid reserves pt-24 for this
           bar, but with no z-index of its own the bar painted *under* the
           overlay, so search, filters and the company count all vanished the
           moment you switched to Grid. */}
-      <div className="absolute left-4 right-4 top-4 z-30 flex flex-wrap items-center gap-2">
+      <div
+        className={cn(
+          "absolute left-3 right-3 top-3 z-30 flex flex-wrap items-center gap-2 md:left-4 md:right-16 md:top-4",
+          selectedCompanyId !== null && "lg:right-[404px]"
+        )}
+      >
         {/* Search with autocomplete */}
-        <div className="relative min-w-[180px] flex-1 sm:max-w-sm" ref={searchRef}>
+        <div className="relative min-w-[180px] flex-1 md:max-w-sm" ref={searchRef}>
           <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-green-700 z-10" />
           <Input
             value={searchValue}
             onChange={(e) => handleSearchInput(e.target.value)}
             onFocus={() => searchValue.length >= 2 && setShowSuggestions(true)}
-            placeholder="Search job roles — Frontend Engineer, Data Scientist..."
-            className="h-11 rounded-xl border-gray-100 bg-white/95 pl-9 pr-9 text-sm shadow-[0_2px_8px_rgba(15,23,42,0.06)] backdrop-blur-sm transition-all duration-200 placeholder:text-gray-500 focus:border-green-200 focus:shadow-[0_6px_20px_rgba(22,163,74,0.16)] focus:ring-4 focus:ring-green-400/15"
+            placeholder="Search job roles"
+            className="h-11 rounded-xl border-gray-100 lg:h-10 bg-white/95 pl-9 pr-9 text-sm shadow-[0_2px_8px_rgba(15,23,42,0.06)] backdrop-blur-sm transition-all duration-200 placeholder:text-gray-500 focus:border-green-200 focus:shadow-[0_6px_20px_rgba(22,163,74,0.16)] focus:ring-4 focus:ring-green-400/15"
           />
           {searchValue && (
-            <button onClick={clearSearch} className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-0.5 text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-600 z-10">
+            <button onClick={clearSearch} aria-label="Clear search" className="absolute right-0 top-1/2 flex h-11 w-11 -translate-y-1/2 items-center justify-center rounded-full text-gray-500 transition-colors hover:text-gray-800 lg:h-10 lg:w-10">
               <X className="h-3.5 w-3.5" />
             </button>
           )}
@@ -1627,7 +1812,7 @@ export function MapWorkspace() {
                   type="button"
                   aria-label="Close search results"
                   onClick={() => setSearchDismissed(true)}
-                  className="ml-auto flex h-5 w-5 items-center justify-center rounded-full text-green-700 transition-colors hover:bg-white hover:text-green-800"
+                  className="ml-auto flex h-8 w-8 items-center justify-center rounded-full text-green-700 transition-colors hover:bg-white hover:text-green-800"
                 >
                   <X className="h-3 w-3" aria-hidden="true" />
                 </button>
@@ -1692,25 +1877,28 @@ export function MapWorkspace() {
           )}
         </div>
 
+        {/* Everything except search. A bottom bar on phones, where it's in thumb
+            reach and leaves the map clear; inline in the toolbar from md up. */}
+        <div className="fixed inset-x-3 bottom-[max(12px,env(safe-area-inset-bottom))] z-30 flex items-center gap-2 md:static md:contents">
         {/* City dropdown */}
-        <div className="relative shrink-0" data-city-dropdown>
+        <div className="relative min-w-0 flex-1 md:flex-none md:shrink-0" data-city-dropdown>
           <button
             type="button"
             onClick={() => setCityDropdownOpen(!cityDropdownOpen)}
-            className="flex items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-semibold shadow-lg transition-all hover:shadow-xl"
+            className="flex h-11 w-full items-center gap-2 rounded-xl bg-white px-3 text-sm font-semibold shadow-lg transition-all hover:shadow-xl lg:h-10 md:w-auto md:px-4"
           >
-            <MapPin className="h-4 w-4 text-green-700" />
-            <span className="text-gray-800">{selectedCity}</span>
+            <MapPin className="h-4 w-4 shrink-0 text-green-700" />
+            <span className="truncate text-gray-800">{selectedCity}</span>
             {(() => {
               const cc = (cities ?? []).find(c => c.city === selectedCity);
               return cc ? (
-                <span className="rounded-full bg-green-100 px-2 py-0.5 text-xs font-bold text-green-700">{cc.count}</span>
+                <span className="hidden rounded-full bg-green-100 px-2 py-0.5 text-xs font-bold text-green-700 md:inline">{cc.count}</span>
               ) : null;
             })()}
-            <ChevronDown className={cn("h-4 w-4 text-gray-500 transition-transform", cityDropdownOpen && "rotate-180")} />
+            <ChevronDown className={cn("ml-auto h-4 w-4 shrink-0 text-gray-500 transition-transform md:ml-0", cityDropdownOpen && "rotate-180")} />
           </button>
           {cityDropdownOpen && (
-            <div className="absolute left-0 top-full z-50 mt-2 w-64 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-2xl"
+            <div className="absolute bottom-full left-0 z-50 mb-2 w-64 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-2xl md:bottom-auto md:top-full md:mb-0 md:mt-2"
               style={{ animation: "fadeSlideUp 0.15s ease-out" }}
             >
               <div className="border-b border-gray-50 px-4 py-2.5">
@@ -1721,6 +1909,11 @@ export function MapWorkspace() {
                   `overflow-hidden` used to clip every city below the fold —
                   they could not be seen or tapped at all on mobile. */}
               <div className="max-h-[55vh] overflow-y-auto scroll-thin">
+              {!cities && (
+                <div className="flex min-h-11 items-center gap-2 px-4 text-sm text-gray-500">
+                  <Loader2 className="h-4 w-4 animate-spin text-green-700" aria-hidden="true" /> Loading cities…
+                </div>
+              )}
               {(cities ?? []).map((c) => (
                 <button
                   key={c.city}
@@ -1758,12 +1951,13 @@ export function MapWorkspace() {
         </div>
 
         {/* Map / Grid view toggle */}
-        <div className="flex shrink-0 items-center gap-0.5 rounded-xl bg-white p-1 shadow-lg">
+        <div className="flex shrink-0 items-center gap-0.5 rounded-xl bg-white shadow-lg lg:h-10 lg:p-1">
           <button
             type="button"
             onClick={() => setViewMode("map")}
+            disabled={webglOk === false}
             className={cn(
-              "rounded-lg px-3 py-1.5 text-xs font-bold transition-all duration-200",
+              "h-11 min-w-11 rounded-xl px-3 text-xs font-bold transition-all duration-200 lg:h-8 lg:rounded-lg disabled:cursor-not-allowed disabled:opacity-40",
               viewMode === "map" ? "bg-gray-900 text-white" : "text-gray-500 hover:text-gray-800"
             )}
           >
@@ -1773,7 +1967,7 @@ export function MapWorkspace() {
             type="button"
             onClick={() => setViewMode("grid")}
             className={cn(
-              "rounded-lg px-3 py-1.5 text-xs font-bold transition-all duration-200",
+              "h-11 min-w-11 rounded-xl px-3 text-xs font-bold transition-all duration-200 lg:h-8 lg:rounded-lg",
               viewMode === "grid" ? "bg-gray-900 text-white" : "text-gray-500 hover:text-gray-800"
             )}
           >
@@ -1786,7 +1980,7 @@ export function MapWorkspace() {
           type="button"
           onClick={() => setHiringOnly(!hiringOnly)}
           className={cn(
-            "flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-sm font-semibold shadow-lg transition-all duration-200",
+            "hidden h-11 items-center gap-1.5 rounded-xl px-3.5 text-sm lg:h-10 font-semibold shadow-lg transition-all duration-200 md:flex",
             hiringOnly
               ? "bg-green-600 text-white"
               : "bg-white text-gray-600 hover:bg-green-50 hover:text-green-700"
@@ -1800,14 +1994,17 @@ export function MapWorkspace() {
             surface (like the Map/Grid toggle) instead of each floating as
             its own pill, so the toolbar reads as a few logical clusters
             instead of 8 equal-weight buttons in a row. */}
-        <div className="flex shrink-0 items-center gap-0.5 rounded-xl bg-white p-1 shadow-lg">
+        <div className="flex shrink-0 items-center gap-0.5 rounded-xl bg-white shadow-lg lg:h-10 lg:p-1">
           {/* Filters toggle — closed by default on every screen size so the
               map stays full-bleed until you actually want the facet list. */}
           <button
             type="button"
             onClick={() => setMobileFiltersOpen((v) => !v)}
+            data-filters-toggle
+            aria-label="Filters"
+            aria-expanded={mobileFiltersOpen}
             className={cn(
-              "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition-all duration-200",
+              "flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl px-3 text-sm lg:h-8 lg:rounded-lg font-semibold transition-all duration-200",
               mobileFiltersOpen
                 ? "bg-green-600 text-white"
                 : "text-gray-600 hover:bg-green-50 hover:text-green-700"
@@ -1827,8 +2024,9 @@ export function MapWorkspace() {
               type="button"
               onClick={() => setForYouOnly((v) => !v)}
               title={`Match your target roles: ${targetRoles.join(", ")}`}
+              aria-label="For You"
               className={cn(
-                "flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition-all duration-200",
+                "flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl px-3 text-sm lg:h-8 lg:rounded-lg font-semibold transition-all duration-200",
                 forYouOnly
                   ? "bg-green-600 text-white"
                   : "text-gray-600 hover:bg-green-50 hover:text-green-700"
@@ -1841,24 +2039,20 @@ export function MapWorkspace() {
 
           <SavedSearchesButton filters={currentFilters} onApply={applySavedSearch} grouped />
         </div>
+        </div>
 
         {/* Status */}
-        {isLoading && (
-          <div className="hidden items-center gap-1.5 rounded-xl bg-white px-3 py-2 text-xs font-medium text-gray-500 shadow-lg sm:flex">
-            <Loader2 className="h-3.5 w-3.5 animate-spin text-green-700" /> Loading…
-          </div>
-        )}
         {isError && (
           <button
             type="button"
             onClick={() => refetchCompanies()}
-            className="flex items-center gap-1.5 rounded-xl bg-red-50 px-3 py-2 text-xs font-medium text-red-500 shadow-lg transition-colors hover:bg-red-100"
+            className="flex min-h-11 items-center gap-1.5 rounded-xl bg-red-50 px-3 text-xs font-medium text-red-600 lg:min-h-10 shadow-lg transition-colors hover:bg-red-100"
           >
             <AlertTriangle className="h-3.5 w-3.5" /> Couldn&apos;t load companies — Retry
           </button>
         )}
         {!isLoading && !isError && filteredCompanies && (
-          <div className="hidden items-center gap-2 rounded-xl bg-white px-3.5 py-2 text-xs font-semibold shadow-lg sm:flex">
+          <div className="hidden min-h-11 items-center gap-2 rounded-xl bg-white px-3.5 text-xs font-semibold shadow-lg md:flex lg:min-h-10">
             {searchQuery && (
               <span className="rounded-md bg-green-100 px-1.5 py-0.5 text-xs font-bold text-green-700">
                 &quot;{searchQuery}&quot;
@@ -1888,8 +2082,8 @@ export function MapWorkspace() {
               }
             >
               {companiesCapped
-                ? `${totalCount} of 500+ companies`
-                : `${totalCount} compan${totalCount !== 1 ? 'ies' : 'y'} in view`}
+                ? `${totalCount} of ${facetActive || searchQuery ? "500+" : selectedCityCount ?? "500+"} companies`
+                : `${totalCount} compan${totalCount !== 1 ? 'ies' : 'y'}${facetActive ? "" : " in view"}`}
             </span>
             {/* Map-only: in Grid the map is behind a full-screen overlay, so
                 this button would zoom something the user cannot see. */}
@@ -1897,7 +2091,7 @@ export function MapWorkspace() {
               <button
                 type="button"
                 onClick={() => mapRef.current?.zoomIn({ duration: 300 })}
-                className="flex items-center gap-1 rounded-md bg-amber-50 px-1.5 py-0.5 text-xs font-bold text-amber-700 transition-colors hover:bg-amber-100"
+                className="flex min-h-11 items-center gap-1 rounded-md bg-amber-50 px-2 text-xs font-bold text-amber-700 lg:min-h-8 transition-colors hover:bg-amber-100"
               >
                 <Plus className="h-3 w-3" aria-hidden="true" />
                 zoom in for more
@@ -1916,6 +2110,32 @@ export function MapWorkspace() {
         )}
       </div>
 
+      {isLoading && (
+        <div className="pointer-events-none absolute inset-x-0 top-[72px] z-40 flex justify-center px-3 md:top-20" role="status">
+          <div className="flex max-w-sm items-center gap-2 rounded-xl bg-white px-4 py-2.5 text-sm font-medium text-gray-700 shadow-lg">
+            <Loader2 className="h-4 w-4 shrink-0 animate-spin text-green-700" aria-hidden="true" />
+            {slowLoad ? "Waking up the server. This can take up to a minute on the first visit." : "Loading companies…"}
+          </div>
+        </div>
+      )}
+
+      {viewMode === "map" && mapSlow && !mapLoaded && (
+        <div className="absolute inset-0 z-10 flex items-center justify-center p-6">
+          <div className="flex max-w-xs flex-col items-center gap-2 rounded-xl border border-gray-100 bg-white px-5 py-4 text-center shadow-2xl">
+            <MapPinOff className="h-8 w-8 text-gray-300" aria-hidden="true" />
+            <p className="text-sm font-medium text-gray-700">The map is taking a while to load</p>
+            <p className="text-xs text-gray-500">Your connection may be blocking it. The list works without it.</p>
+            <button
+              type="button"
+              onClick={() => setViewMode("grid")}
+              className="mt-1 h-11 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-green-700 lg:h-9"
+            >
+              Show the list
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── Empty viewport (map view only) ──
           Zoomed in far enough that companies should be showing, but this
           viewport holds none. Name the situation and offer the way out,
@@ -1924,18 +2144,22 @@ export function MapWorkspace() {
         <div className="pointer-events-none absolute inset-0 z-10 flex items-center justify-center p-6">
           <div className="pointer-events-auto flex max-w-xs flex-col items-center gap-1.5 rounded-xl border border-gray-100 bg-white/95 px-5 py-4 text-center shadow-2xl backdrop-blur-sm">
             <Building2 className="h-8 w-8 text-gray-200" aria-hidden="true" />
-            <p className="text-sm font-medium text-gray-600">No companies in this view</p>
+            <p className="text-sm font-medium text-gray-600">
+              {facetActive ? "No companies match these filters" : "No companies in this view"}
+            </p>
             <p className="text-xs text-gray-500">
               {searchQuery
                 ? `Nothing here matches "${searchQuery}".`
-                : "None of this city's companies are mapped in this area."}
+                : facetActive
+                  ? "Try removing a filter."
+                  : "None of this city's companies are mapped in this area."}
             </p>
             <button
               type="button"
-              onClick={() => mapRef.current?.zoomOut({ duration: 300 })}
-              className="mt-1 rounded-lg bg-green-600 px-2.5 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-green-700"
+              onClick={() => (facetActive ? clearAllFilters() : mapRef.current?.zoomOut({ duration: 300 }))}
+              className="mt-1 h-11 rounded-xl bg-green-600 px-4 text-sm font-semibold text-white transition-colors hover:bg-green-700 lg:h-9"
             >
-              Zoom out
+              {facetActive ? "Clear filters" : "Zoom out"}
             </button>
           </div>
         </div>
@@ -1947,34 +2171,34 @@ export function MapWorkspace() {
       // block used to win on DOM order alone; giving the toolbar a z-index to
       // clear the Grid overlay would otherwise have parked it on top of these
       // buttons and swallowed every click.
-      <div className="absolute right-4 top-4 z-40 flex flex-col overflow-hidden rounded-xl bg-white shadow-lg">
+      <div className="absolute right-3 top-[68px] z-20 flex flex-col overflow-hidden rounded-xl bg-white shadow-lg md:right-4 md:top-4 md:z-40">
         <button
           type="button"
           // Icon-only buttons need an explicit name — the SVG alone leaves
           // assistive tech announcing three indistinguishable "button"s.
           aria-label="Zoom in"
           title="Zoom in"
-          className="flex h-9 w-9 items-center justify-center text-gray-500 transition hover:bg-green-50 hover:text-green-700"
+          className="hidden h-11 w-11 items-center lg:h-10 lg:w-10 justify-center text-gray-500 transition hover:bg-green-50 hover:text-green-700 md:flex"
           onClick={() => mapRef.current?.zoomIn({ duration: 200 })}
         >
           <Plus className="h-4 w-4" aria-hidden="true" />
         </button>
-        <div className="mx-2.5 h-px bg-gray-100" />
+        <div className="mx-2.5 hidden h-px bg-gray-100 md:block" />
         <button
           type="button"
           aria-label="Zoom out"
           title="Zoom out"
-          className="flex h-9 w-9 items-center justify-center text-gray-500 transition hover:bg-green-50 hover:text-green-700"
+          className="hidden h-11 w-11 items-center lg:h-10 lg:w-10 justify-center text-gray-500 transition hover:bg-green-50 hover:text-green-700 md:flex"
           onClick={() => mapRef.current?.zoomOut({ duration: 200 })}
         >
           <Minus className="h-4 w-4" aria-hidden="true" />
         </button>
-        <div className="mx-2.5 h-px bg-gray-100" />
+        <div className="mx-2.5 hidden h-px bg-gray-100 md:block" />
         <button
           type="button"
           aria-label={`Centre the map on ${selectedCity}`}
           title={`Centre the map on ${selectedCity}`}
-          className="flex h-9 w-9 items-center justify-center text-gray-500 transition hover:bg-green-50 hover:text-green-700"
+          className="flex h-11 w-11 items-center lg:h-10 lg:w-10 justify-center text-gray-500 transition hover:bg-green-50 hover:text-green-700"
           onClick={() => {
             const c = getCityCenter(selectedCity);
             mapRef.current?.flyTo({ center: [c.longitude, c.latitude], zoom: c.zoom, duration: 600 });
@@ -1991,8 +2215,8 @@ export function MapWorkspace() {
           and an opacity change, none of which is self-evident, and the
           "Not hiring right now" copy only exists inside a hover tooltip that
           touch users never see. */}
-      {viewMode === "map" && (
-        <div className="absolute bottom-8 left-4 z-20 flex flex-col items-start gap-2">
+      {viewMode === "map" && !mobileFiltersOpen && (
+        <div className="absolute bottom-[84px] left-3 z-20 flex flex-col items-start gap-2 md:bottom-8 md:left-4">
           {legendOpen && (
             <div
               className="scroll-thin max-h-[50vh] w-56 overflow-y-auto rounded-xl border border-gray-100 bg-white/95 p-3 text-[11px] shadow-[0_12px_40px_rgba(15,23,42,0.14)] backdrop-blur-sm sm:w-60 sm:p-3.5 sm:text-xs"
@@ -2054,11 +2278,17 @@ export function MapWorkspace() {
             onClick={() => setLegendOpen((v) => !v)}
             aria-expanded={legendOpen}
             aria-label={legendOpen ? "Hide map legend" : "Show map legend"}
-            className="flex items-center gap-1.5 rounded-xl bg-white px-3 py-2 text-xs font-semibold text-gray-600 shadow-lg transition-colors hover:text-green-700"
+            className="flex h-11 items-center gap-1.5 rounded-xl bg-white px-3 text-xs font-semibold text-gray-600 shadow lg:h-9-lg transition-colors hover:text-green-700"
           >
             <Layers className="h-3.5 w-3.5 text-green-700" aria-hidden="true" />
             {legendOpen ? "Hide legend" : "Legend"}
           </button>
+          {!isLoading && !isError && filteredCompanies && (
+            <div className="rounded-lg bg-white/95 px-2.5 py-1 text-xs font-semibold text-gray-700 shadow md:hidden">
+              {totalCount}{companiesCapped ? "+" : ""} compan{totalCount === 1 ? "y" : "ies"}
+              {hiringCount > 0 && <span className="text-green-700"> · {hiringCount} hiring</span>}
+            </div>
+          )}
         </div>
       )}
 
@@ -2074,7 +2304,7 @@ export function MapWorkspace() {
         className={cn(
           "scroll-thin z-50 overflow-y-auto rounded-xl border border-gray-100 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.14)]",
           "fixed inset-x-3 bottom-3 max-h-[75vh]",
-          "md:absolute md:inset-x-auto md:bottom-auto md:left-4 md:top-20 md:z-30 md:w-56 md:max-h-[calc(100%-100px)]",
+          "md:absolute md:inset-x-auto md:bottom-auto md:left-4 md:top-36 md:z-30 md:w-56 md:max-h-[calc(100%-160px)] xl:top-20 xl:max-h-[calc(100%-100px)]",
           mobileFiltersOpen ? "block" : "hidden"
         )}
         style={{ animation: "fadeSlideUp 0.3s ease-out" }}
@@ -2102,7 +2332,8 @@ export function MapWorkspace() {
           <button
             type="button"
             onClick={() => setMobileFiltersOpen(false)}
-            className={cn("shrink-0 rounded-full bg-gray-100 p-1 text-gray-500 transition-colors hover:bg-gray-200", activeFilterCount === 0 && "ml-auto")}
+            aria-label="Close filters"
+            className={cn("flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-gray-500 lg:h-8 lg:w-8 lg:bg-gray-100 transition-colors hover:bg-gray-200", activeFilterCount === 0 && "ml-auto")}
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -2129,13 +2360,29 @@ export function MapWorkspace() {
           </div>
         )}
 
+        {/* The toolbar's hiring switch moves here on phones, to keep the bottom bar short. */}
+        <div className="border-b border-gray-50 px-3 py-2 md:hidden">
+          <button
+            type="button"
+            onClick={() => setHiringOnly(!hiringOnly)}
+            aria-pressed={hiringOnly}
+            className={cn(
+              "flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2.5 text-sm font-semibold transition-all",
+              hiringOnly ? "bg-green-600 text-white" : "text-gray-700 hover:bg-green-50"
+            )}
+          >
+            <BriefcaseBusiness className="h-3.5 w-3.5" aria-hidden="true" />
+            Only companies hiring now
+          </button>
+        </div>
+
         {/* Type */}
         <div className="px-3 pb-2 pt-3">
           <span className="px-1 text-xs font-bold uppercase tracking-widest text-green-700">Type</span>
           <div className="mt-1.5 flex flex-col gap-0.5">
             <button type="button" onClick={() => setSelectedType(null)}
-              className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all",
-                selectedType === null ? "bg-green-600 font-semibold text-white" : "text-gray-600 hover:bg-green-50 hover:text-green-700"
+              className={cn("flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all lg:min-h-9",
+                selectedType === null ? "bg-gray-100 font-semibold text-gray-800" : "text-gray-600 hover:bg-green-50 hover:text-green-700"
               )}>
               <Blocks className="h-3.5 w-3.5" />
               All types
@@ -2144,7 +2391,7 @@ export function MapWorkspace() {
               const Icon = t.type === "Startup" ? Rocket : t.type === "Growth" ? TrendingUp : t.type === "Public" ? Landmark : Building;
               return (
                 <button key={t.type} type="button" onClick={() => setSelectedType(selectedType === t.type ? null : t.type)}
-                  className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all",
+                  className={cn("flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all lg:min-h-9",
                     selectedType === t.type ? "bg-green-600 font-semibold text-white" : "text-gray-600 hover:bg-green-50 hover:text-green-700"
                   )}>
                   <Icon className="h-3.5 w-3.5" />
@@ -2164,8 +2411,8 @@ export function MapWorkspace() {
           <span className="px-1 text-xs font-bold uppercase tracking-widest text-green-700">Stage</span>
           <div className="mt-1.5 flex flex-col gap-0.5">
             <button type="button" onClick={() => setSelectedStage(null)}
-              className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all",
-                selectedStage === null ? "bg-green-600 font-semibold text-white" : "text-gray-600 hover:bg-green-50 hover:text-green-700"
+              className={cn("flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all lg:min-h-9",
+                selectedStage === null ? "bg-gray-100 font-semibold text-gray-800" : "text-gray-600 hover:bg-green-50 hover:text-green-700"
               )}>
               <Blocks className="h-3.5 w-3.5" />
               All stages
@@ -2174,7 +2421,7 @@ export function MapWorkspace() {
               const Icon = s.stage === "Seed" ? Sprout : s.stage.startsWith("Series") ? CircleDollarSign : s.stage === "Growth" ? TrendingUp : Landmark;
               return (
                 <button key={s.stage} type="button" onClick={() => setSelectedStage(selectedStage === s.stage ? null : s.stage)}
-                  className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all",
+                  className={cn("flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all lg:min-h-9",
                     selectedStage === s.stage ? "bg-green-600 font-semibold text-white" : "text-gray-600 hover:bg-green-50 hover:text-green-700"
                   )}>
                   <Icon className="h-3.5 w-3.5" />
@@ -2196,7 +2443,7 @@ export function MapWorkspace() {
           <div className="mt-1.5 flex flex-col gap-0.5">
             {areas?.map((a) => (
               <button key={a.area} type="button" onClick={() => setSelectedArea(selectedArea === a.area ? null : a.area)}
-                className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all",
+                className={cn("flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all lg:min-h-9",
                   selectedArea === a.area ? "bg-green-600 font-semibold text-white" : "text-gray-600 hover:bg-green-50 hover:text-green-700"
                 )}>
                 <MapPinned className="h-3.5 w-3.5" />
@@ -2216,8 +2463,8 @@ export function MapWorkspace() {
           <span className="px-1 text-xs font-bold uppercase tracking-widest text-green-700">Sector</span>
           <div className="mt-1.5 flex flex-col gap-0.5">
             <button type="button" onClick={() => setSelectedSector(null)}
-              className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all",
-                selectedSector === null ? "bg-green-600 font-semibold text-white" : "text-gray-600 hover:bg-green-50 hover:text-green-700"
+              className={cn("flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all lg:min-h-9",
+                selectedSector === null ? "bg-gray-100 font-semibold text-gray-800" : "text-gray-600 hover:bg-green-50 hover:text-green-700"
               )}>
               <Factory className="h-3.5 w-3.5" />
               All sectors
@@ -2227,7 +2474,7 @@ export function MapWorkspace() {
               const cfg = getSectorConfig(s.sector) ?? DEFAULT_SECTOR;
               return (
                 <button key={s.sector} type="button" onClick={() => setSelectedSector(active ? null : s.sector)}
-                  className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all",
+                  className={cn("flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all lg:min-h-9",
                     active ? "bg-green-600 font-semibold text-white" : "text-gray-500 hover:bg-green-50 hover:text-green-700"
                   )}>
                   <span className="h-3 w-3 rounded-full border-2" style={{ borderColor: cfg.color, background: active ? "white" : `${cfg.color}20` }} />
@@ -2249,8 +2496,8 @@ export function MapWorkspace() {
           <span className="px-1 text-xs font-bold uppercase tracking-widest text-green-700">Hiring for</span>
           <div className="mt-1.5 flex flex-col gap-0.5">
             <button type="button" onClick={() => setSelectedDepartment(null)}
-              className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all",
-                selectedDepartment === null ? "bg-green-600 font-semibold text-white" : "text-gray-600 hover:bg-green-50 hover:text-green-700"
+              className={cn("flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all lg:min-h-9",
+                selectedDepartment === null ? "bg-gray-100 font-semibold text-gray-800" : "text-gray-600 hover:bg-green-50 hover:text-green-700"
               )}>
               <Layers className="h-3.5 w-3.5" />
               All departments
@@ -2259,7 +2506,7 @@ export function MapWorkspace() {
               const active = selectedDepartment === d.department;
               return (
                 <button key={d.department} type="button" onClick={() => setSelectedDepartment(active ? null : d.department)}
-                  className={cn("flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all",
+                  className={cn("flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-sm transition-all lg:min-h-9",
                     active ? "bg-green-600 font-semibold text-white" : "text-gray-500 hover:bg-green-50 hover:text-green-700"
                   )}>
                   <span className="flex-1 text-left">{d.department}</span>
@@ -2272,10 +2519,22 @@ export function MapWorkspace() {
             {departments?.length === 0 && <EmptyFacetHint text="No department data yet" />}
           </div>
         </div>
+
+        <div className="sticky bottom-0 z-10 border-t border-gray-100 bg-white p-3 md:hidden">
+          <button
+            type="button"
+            onClick={() => setMobileFiltersOpen(false)}
+            className="h-11 w-full rounded-xl bg-green-600 text-sm font-semibold text-white transition-colors hover:bg-green-700"
+          >
+            {isLoading || isPlaceholderData
+              ? "Show results"
+              : `Show ${totalCount}${companiesCapped ? "+" : ""} compan${totalCount === 1 ? "y" : "ies"}`}
+          </button>
+        </div>
       </div>
 
       {/* ── Attribution ── */}
-      <div className="absolute bottom-2 right-2 text-xs text-gray-500">
+      <div className="pointer-events-none absolute bottom-[60px] right-3 text-[10px] text-gray-500 md:bottom-2 md:right-2 md:text-xs">
         MapLibre | © CARTO | © OpenStreetMap
       </div>
     </div>

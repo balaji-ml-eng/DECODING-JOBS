@@ -49,7 +49,7 @@ export function ResponsiveShell() {
             type="button"
             onClick={() => setSelectedCompanyId(null)}
             aria-label="Close"
-            className="absolute right-3 top-3 z-10 flex h-7 w-7 items-center justify-center rounded-full bg-white/90 text-gray-500 shadow-sm backdrop-blur-sm transition-colors hover:bg-gray-100"
+            className="absolute right-3 top-3 z-10 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-gray-500 shadow-sm backdrop-blur-sm transition-colors hover:bg-gray-100"
           >
             <X className="h-3.5 w-3.5" />
           </button>
@@ -66,7 +66,7 @@ export function ResponsiveShell() {
             onClick={() => setSelectedCompanyId(null)}
           />
           <div
-            className="absolute inset-x-0 bottom-0 flex max-h-[82vh] flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl"
+            className="absolute inset-x-0 bottom-0 flex max-h-[85dvh] flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl"
             style={{ animation: "sheetSlideUp 0.25s cubic-bezier(0.32,0.72,0,1)" }}
           >
             <div className="relative flex shrink-0 items-center justify-center py-2.5">
@@ -75,7 +75,7 @@ export function ResponsiveShell() {
                 type="button"
                 onClick={() => setSelectedCompanyId(null)}
                 aria-label="Close"
-                className="absolute right-3 top-2 flex h-8 w-8 items-center justify-center rounded-full bg-gray-100 text-gray-500 transition-colors hover:bg-gray-200"
+                className="absolute right-1 top-0 flex h-11 w-11 items-center justify-center rounded-full text-gray-500 transition-colors hover:bg-gray-200"
               >
                 <X className="h-4 w-4" />
               </button>

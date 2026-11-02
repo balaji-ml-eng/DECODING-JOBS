@@ -62,7 +62,7 @@ function LinkField({
   return (
     <div className="flex items-center gap-2">
       <Icon className="h-4 w-4 shrink-0 text-gray-500" />
-      <Input placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} className="h-9 text-xs" />
+      <Input placeholder={placeholder} value={value} onChange={(e) => onChange(e.target.value)} className="text-xs" />
       {value && (
         <span
           className={cn(
@@ -78,7 +78,7 @@ function LinkField({
 }
 
 const selectCls =
-  "flex h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400/40";
+  "min-h-11 lg:min-h-10 flex h-10 w-full rounded-lg border border-gray-200 bg-white px-3 text-sm text-gray-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-green-400/40";
 
 /**
  * Data-portability and account-deletion controls.
@@ -149,7 +149,7 @@ function AccountDataSection() {
           type="button"
           onClick={handleExport}
           disabled={busy !== null}
-          className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-xs font-semibold text-gray-600 transition-all hover:border-green-200 hover:bg-green-50 hover:text-green-700 disabled:opacity-50"
+          className="flex min-h-11 items-center gap-1.5 rounded-lg border border-gray-200 px-3 text-xs font-semibold lg:min-h-9 text-gray-600 transition-all hover:border-green-200 hover:bg-green-50 hover:text-green-700 disabled:opacity-50"
         >
           {busy === "export" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Download className="h-3.5 w-3.5" />}
           Download my data
@@ -160,7 +160,7 @@ function AccountDataSection() {
           onBlur={() => setConfirming(false)}
           disabled={busy !== null}
           className={cn(
-            "flex items-center gap-1.5 rounded-lg px-3 py-2 text-xs font-bold transition-all disabled:opacity-50",
+            "flex min-h-11 items-center gap-1.5 rounded-lg px-3 text-xs font-bold transition-all disabled:opacity-50 lg:min-h-9",
             confirming
               ? "bg-red-600 text-white hover:bg-red-700"
               : "border border-red-200 text-red-600 hover:bg-red-50"
@@ -305,7 +305,7 @@ function ProfileForm({ email }: { email: string }) {
                     type="button"
                     onClick={() => toggleCity(city)}
                     className={cn(
-                      "rounded-full px-3 py-1.5 text-xs font-semibold transition-all",
+                      "min-h-11 rounded-full px-3 text-xs font-semibold transition-all lg:min-h-8",
                       active
                         ? "bg-green-600 text-white"
                         : "border border-gray-200 text-gray-500 hover:border-green-200 hover:bg-green-50 hover:text-green-700"
@@ -387,7 +387,7 @@ function ProfileForm({ email }: { email: string }) {
               aria-checked={visibleToRecruiters}
               onClick={() => setVisibleToRecruiters((v) => !v)}
               className={cn(
-                "relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors",
+                "relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors before:absolute before:-inset-x-2 before:-inset-y-3 before:content-['']",
                 visibleToRecruiters ? "bg-green-500" : "bg-gray-300"
               )}
             >
@@ -413,7 +413,7 @@ function ProfileForm({ email }: { email: string }) {
           <button
             type="submit"
             disabled={mutation.isPending}
-            className="mt-1 flex items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 py-3 text-sm font-bold text-white shadow-lg shadow-green-500/25 transition-all hover:shadow-xl disabled:opacity-60"
+            className="mt-1 flex min-h-11 items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 py-3 text-sm font-bold text-white shadow-lg shadow-green-500/25 transition-all hover:shadow-xl disabled:opacity-60"
           >
             {mutation.isPending ? (
               <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</>

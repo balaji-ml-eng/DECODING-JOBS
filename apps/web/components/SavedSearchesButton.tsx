@@ -74,9 +74,10 @@ export function SavedSearchesButton({
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
+        aria-label="Saved searches"
         className={cn(
-          "flex items-center gap-1.5 text-sm font-semibold transition-all duration-200",
-          grouped ? "rounded-lg px-3 py-1.5" : "rounded-xl px-3.5 py-2 shadow-lg",
+          "flex h-11 min-w-11 items-center justify-center gap-1.5 text-sm font-semibold transition-all duration-200",
+          grouped ? "rounded-xl px-3 lg:h-8 lg:rounded-lg" : "rounded-xl px-3.5 shadow-lg lg:h-10",
           open
             ? "bg-green-600 text-white"
             : cn("text-gray-600 hover:bg-green-50 hover:text-green-700", !grouped && "bg-white")
@@ -88,7 +89,7 @@ export function SavedSearchesButton({
 
       {open && (
         <div
-          className="absolute right-0 top-[calc(100%+8px)] z-50 w-72 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.14)]"
+          className="absolute bottom-[calc(100%+8px)] right-0 z-50 w-72 max-w-[calc(100vw-24px)] overflow-hidden md:bottom-auto md:top-[calc(100%+8px)] rounded-xl border border-gray-100 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.14)]"
           style={{ animation: "fadeSlideUp 0.2s ease-out" }}
         >
           <div className="flex items-center gap-2 border-b border-green-50 px-4 py-3">

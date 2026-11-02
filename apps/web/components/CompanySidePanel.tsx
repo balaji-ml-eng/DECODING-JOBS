@@ -16,7 +16,6 @@ import {
   Briefcase,
   Users,
   Calendar,
-  Zap,
   Globe,
   Linkedin,
   TrendingUp,
@@ -36,12 +35,15 @@ import {
   getJobsByCompany,
   submitApplication,
   saveJob,
+  getApplicationBoard,
   listResumes,
   type Job,
   type WorkMode,
   type Company,
   type Resume,
 } from "@/lib/api";
+
+const ROLES_COLLAPSED_AT = 4;
 
 const WORK_MODE_LABELS: Record<WorkMode, string> = {
   remote: "Remote",
@@ -147,11 +149,13 @@ function CompanyInfoBar({ company }: { company: Company }) {
 
 function RoleCard({
   job,
+  isApplied,
   isSaved,
   onSave,
   canSave,
 }: {
   job: Job;
+  isApplied: boolean;
   isSaved: boolean;
   onSave: () => void;
   canSave: boolean;
@@ -159,13 +163,18 @@ function RoleCard({
   const mode = job.work_mode ? WORK_MODE_LABELS[job.work_mode] : null;
   return (
     <div className="rounded-xl border border-gray-100 bg-white p-3 transition-all hover:border-green-200 hover:shadow-sm">
-      <div className="flex items-start justify-between gap-2">
+      <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-gray-900">{job.title}</p>
+          <p className="line-clamp-2 text-sm font-semibold text-gray-900 lg:line-clamp-none lg:truncate" title={job.title}>{job.title}</p>
           {job.salary_min || job.salary_max ? (
             <p className="mt-0.5 text-xs text-gray-500">{formatSalaryRange(job)}</p>
           ) : null}
           <div className="mt-1.5 flex items-center gap-1 flex-wrap">
+            {isApplied && (
+              <span className="flex items-center gap-1 rounded-md bg-green-100 px-1.5 py-0.5 text-xs font-bold text-green-700">
+                <CheckCircle2 className="h-3 w-3" aria-hidden="true" /> Applied
+              </span>
+            )}
             {mode && (
               <span className="rounded-md bg-gray-100 px-1.5 py-0.5 text-xs font-bold uppercase text-gray-500">
                 {mode}
@@ -183,15 +192,16 @@ function RoleCard({
             )}
           </div>
         </div>
-        <div className="flex shrink-0 items-center gap-1">
+        <div className="flex items-center gap-2 lg:shrink-0 lg:gap-1">
           {canSave && (
             <button
               type="button"
               onClick={onSave}
               disabled={isSaved}
               title={isSaved ? "Saved to your tracker" : "Save to your tracker"}
+              aria-label={isSaved ? "Saved to your tracker" : "Save to your tracker"}
               className={cn(
-                "flex h-7 w-7 items-center justify-center rounded-lg border transition-all",
+                "flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border transition-all lg:h-8 lg:w-8",
                 isSaved
                   ? "border-green-200 bg-green-50 text-green-700"
                   : "border-gray-200 text-gray-500 hover:border-green-200 hover:bg-green-50 hover:text-green-700"
@@ -203,7 +213,8 @@ function RoleCard({
           <Link
             href={`/assistant?jobId=${job.id}`}
             title="Prep for this role with the AI Assistant"
-            className="flex h-7 w-7 items-center justify-center rounded-lg border border-gray-200 text-gray-500 transition-all hover:border-green-200 hover:bg-green-50 hover:text-green-700"
+            aria-label="Prep for this role with the AI Assistant"
+            className="flex h-11 w-11 shrink-0 items-center lg:h-8 lg:w-8 justify-center rounded-lg border border-gray-200 text-gray-500 transition-all hover:border-green-200 hover:bg-green-50 hover:text-green-700"
           >
             <GraduationCap className="h-3.5 w-3.5" />
           </Link>
@@ -212,14 +223,14 @@ function RoleCard({
               href={job.apply_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="inline-flex items-center gap-1 rounded-lg bg-green-600 px-2.5 py-1.5 text-xs font-bold text-white transition-colors hover:bg-green-700"
+              className="inline-flex h-11 flex-1 items-center justify-center gap-1 rounded-lg bg-green-600 px-3 text-sm font-bold lg:h-8 lg:flex-none lg:px-2.5 lg:text-xs text-white transition-colors hover:bg-green-700"
             >
-              <Zap className="h-3 w-3" />
-              APPLY
+              Apply
+              <ArrowUpRight className="h-3.5 w-3.5" aria-hidden="true" />
             </a>
           ) : (
-            <span className="rounded-lg bg-gray-100 px-2.5 py-1.5 text-xs font-bold text-gray-500">
-              APPLY
+            <span className="inline-flex h-11 flex-1 items-center justify-center rounded-lg bg-gray-100 px-3 text-sm font-bold text-gray-500 lg:h-8 lg:flex-none lg:px-2.5 lg:text-xs">
+              No link
             </span>
           )}
         </div>
@@ -234,6 +245,7 @@ export function CompanySidePanel() {
   const queryClient = useQueryClient();
 
   const [descExpanded, setDescExpanded] = useState(false);
+  const [rolesExpanded, setRolesExpanded] = useState(false);
   const [resumeDropdownOpen, setResumeDropdownOpen] = useState(false);
   const [selectedResumeId, setSelectedResumeId] = useState<number | null>(null);
   const resumeDropdownRef = useRef<HTMLDivElement>(null);
@@ -276,6 +288,20 @@ export function CompanySidePanel() {
     enabled: selectedCompanyId !== null,
   });
 
+  // What's already on the user's board, so a refresh doesn't forget it.
+  const boardQuery = useQuery({
+    queryKey: ["applicationBoard", email],
+    queryFn: () => getApplicationBoard(),
+    enabled: !!email,
+  });
+  const { boardAppliedIds, boardSavedIds } = useMemo(() => {
+    const cards = boardQuery.data ?? [];
+    return {
+      boardAppliedIds: new Set(cards.filter((c) => c.status !== "saved").map((c) => c.job_id)),
+      boardSavedIds: new Set(cards.filter((c) => c.status === "saved").map((c) => c.job_id)),
+    };
+  }, [boardQuery.data]);
+
   const applyMutation = useMutation({
     mutationFn: (v: { jobId: number; resumeFilename: string | null }) => submitApplication(v),
     onSuccess: () => {
@@ -312,6 +338,7 @@ export function CompanySidePanel() {
     setSavedJobIds(new Set());
     setSelectedJobId(null);
     setDescExpanded(false);
+    setRolesExpanded(false);
   }, [selectedCompanyId, resetApplyMutation]);
 
   useEffect(() => {
@@ -336,9 +363,12 @@ export function CompanySidePanel() {
   // Defaults to the first role, but the dropdown below lets the user pick
   // whichever one they actually mean to apply to.
   const primaryJob = jobs.find((j) => j.id === selectedJobId) ?? jobs[0];
-  // Dynamic section numbering — skip sections with no data
-  let _sec = 0;
-  const hasApplied = applyMutation.isSuccess && applyMutation.data?.job_id === primaryJob?.id;
+  const hasApplied =
+    (applyMutation.isSuccess && applyMutation.data?.job_id === primaryJob?.id) ||
+    (primaryJob ? boardAppliedIds.has(primaryJob.id) : false);
+  // A long list pushed the application and description off the bottom: one
+  // company ran to six screens on a phone.
+  const visibleJobs = rolesExpanded ? jobs : jobs.slice(0, ROLES_COLLAPSED_AT);
 
   // Extract domain for display
   const websiteDomain = company.website_url
@@ -425,7 +455,7 @@ export function CompanySidePanel() {
               href={company.website_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 transition-all hover:border-green-200 hover:bg-green-50 hover:text-green-700"
+              className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 lg:min-h-9 text-xs font-semibold text-gray-600 transition-all hover:border-green-200 hover:bg-green-50 hover:text-green-700"
             >
               <Globe className="h-3.5 w-3.5" />
               {websiteDomain || "Website"}
@@ -437,7 +467,7 @@ export function CompanySidePanel() {
               href={company.linkedin_url}
               target="_blank"
               rel="noopener noreferrer"
-              className="flex flex-1 items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-600 transition-all hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
+              className="flex min-h-11 flex-1 items-center justify-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 lg:min-h-9 text-xs font-semibold text-gray-600 transition-all hover:border-blue-200 hover:bg-blue-50 hover:text-blue-700"
             >
               <Linkedin className="h-3.5 w-3.5" />
               LinkedIn
@@ -450,7 +480,6 @@ export function CompanySidePanel() {
       {/* ── Section: Open Roles ── */}
       <div className="rounded-xl border border-gray-100 bg-white p-3">
         <div className="mb-2 flex items-center gap-1.5">
-          <span className="flex h-5 w-5 items-center justify-center rounded-md bg-green-100 text-xs font-bold text-green-700">{++_sec}</span>
           <h2 className="text-xs font-bold text-gray-900">Open Roles</h2>
           {jobs.length > 0 && (
             <span className="ml-auto rounded-full bg-green-100 px-1.5 py-0.5 text-xs font-bold text-green-700">{jobs.length}</span>
@@ -458,15 +487,28 @@ export function CompanySidePanel() {
         </div>
         <div className="flex flex-col gap-1.5">
           {jobs.length > 0 ? (
-            jobs.map((job) => (
-              <RoleCard
-                key={job.id}
-                job={job}
-                canSave={!!email}
-                isSaved={savedJobIds.has(job.id)}
-                onSave={() => saveMutation.mutate(job.id)}
-              />
-            ))
+            <>
+              {visibleJobs.map((job) => (
+                <RoleCard
+                  key={job.id}
+                  job={job}
+                  canSave={!!email}
+                  isApplied={boardAppliedIds.has(job.id) || (applyMutation.isSuccess && applyMutation.data?.job_id === job.id)}
+                  isSaved={savedJobIds.has(job.id) || boardSavedIds.has(job.id)}
+                  onSave={() => saveMutation.mutate(job.id)}
+                />
+              ))}
+              {jobs.length > ROLES_COLLAPSED_AT && (
+                <button
+                  type="button"
+                  onClick={() => setRolesExpanded((v) => !v)}
+                  aria-expanded={rolesExpanded}
+                  className="min-h-11 rounded-lg text-sm font-semibold text-green-700 transition-colors hover:bg-green-50 lg:min-h-9 lg:text-xs"
+                >
+                  {rolesExpanded ? "Show fewer roles" : `Show all ${jobs.length} roles`}
+                </button>
+              )}
+            </>
           ) : (
             <p className="py-2 text-center text-xs text-gray-500">No active roles right now</p>
           )}
@@ -477,7 +519,6 @@ export function CompanySidePanel() {
       {hasSentiment && (
         <div className="rounded-xl border border-gray-100 bg-white p-3">
           <div className="mb-2 flex items-center gap-1.5">
-            <span className="flex h-5 w-5 items-center justify-center rounded-md bg-green-100 text-xs font-bold text-green-700">{++_sec}</span>
             <h2 className="text-xs font-bold text-gray-900">Company Pulse</h2>
           </div>
           <div className="flex flex-col gap-1">
@@ -506,9 +547,11 @@ export function CompanySidePanel() {
       {/* ── Section: Apply ── */}
       <div className="rounded-xl border border-green-100 bg-gradient-to-br from-green-50/30 to-white p-3">
         <div className="mb-2 flex items-center gap-1.5">
-          <span className="flex h-5 w-5 items-center justify-center rounded-md bg-green-100 text-xs font-bold text-green-700">{++_sec}</span>
-          <h2 className="text-xs font-bold text-gray-900">Apply</h2>
+          <h2 className="text-xs font-bold text-gray-900">Track your application</h2>
         </div>
+        <p className="mb-2 text-xs text-gray-500">
+          Apply on the job site, then mark it here to follow it in your tracker.
+        </p>
         <div className="flex flex-col gap-2">
           {/* Role selector — only shown when there's an actual choice to make.
               Everything below (resume attach, tailor-with-AI, submit, and the
@@ -518,7 +561,7 @@ export function CompanySidePanel() {
               <button
                 type="button"
                 onClick={() => setRoleDropdownOpen((v) => !v)}
-                className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-left transition-all hover:border-green-200"
+                className="flex min-h-11 w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-left lg:min-h-9 transition-all hover:border-green-200"
               >
                 <span className="flex min-w-0 items-center gap-1.5 text-xs text-gray-600">
                   <Briefcase className="h-3.5 w-3.5 shrink-0 text-green-700" />
@@ -541,7 +584,7 @@ export function CompanySidePanel() {
                         setRoleDropdownOpen(false);
                       }}
                       className={cn(
-                        "flex w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors",
+                        "flex min-h-11 w-full items-center gap-2 px-3 py-2 text-left text-xs transition-colors lg:min-h-9",
                         j.id === primaryJob?.id ? "bg-green-50 text-green-700 font-semibold" : "text-gray-600 hover:bg-gray-50"
                       )}
                     >
@@ -559,7 +602,7 @@ export function CompanySidePanel() {
               <button
                 type="button"
                 onClick={() => setResumeDropdownOpen((v) => !v)}
-                className="flex w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-left transition-all hover:border-green-200"
+                className="flex min-h-11 w-full items-center justify-between rounded-lg border border-gray-200 bg-white px-2.5 py-2 text-left lg:min-h-9 transition-all hover:border-green-200"
               >
                 <span className="flex min-w-0 items-center gap-1.5 text-xs text-gray-600">
                   <FileText className="h-3.5 w-3.5 shrink-0 text-green-700" />
@@ -583,7 +626,7 @@ export function CompanySidePanel() {
                         setResumeDropdownOpen(false);
                       }}
                       className={cn(
-                        "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs transition-colors",
+                        "flex min-h-11 w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs transition-colors lg:min-h-9",
                         r.id === selectedResumeId ? "bg-green-50 text-green-700 font-semibold" : "text-gray-600 hover:bg-gray-50"
                       )}
                     >
@@ -601,7 +644,7 @@ export function CompanySidePanel() {
           ) : (
             <Link
               href={primaryJob ? `/assistant?jobId=${primaryJob.id}` : "/assistant"}
-              className="flex items-center justify-center gap-1.5 rounded-lg border border-dashed border-gray-200 bg-white py-2 text-xs font-semibold text-gray-500 transition-all hover:border-green-200 hover:bg-green-50 hover:text-green-700"
+              className="flex min-h-11 items-center justify-center gap-1.5 rounded-lg border border-dashed border-gray-200 bg-white py-2 lg:min-h-9 text-xs font-semibold text-gray-500 transition-all hover:border-green-200 hover:bg-green-50 hover:text-green-700"
             >
               <FileText className="h-3.5 w-3.5" />
               Upload a resume (optional) in AI Assistant
@@ -612,7 +655,7 @@ export function CompanySidePanel() {
           {primaryJob && resumes.length > 0 && (
             <Link
               href={`/assistant?jobId=${primaryJob.id}`}
-              className="flex w-full items-center justify-center gap-1 rounded-lg border border-dashed border-green-200 bg-white py-1.5 text-xs font-semibold text-green-700 transition-all hover:bg-green-50"
+              className="flex min-h-11 w-full items-center justify-center gap-1 rounded-lg border border-dashed border-green-200 bg-white py-1.5 lg:min-h-9 text-xs font-semibold text-green-700 transition-all hover:bg-green-50"
             >
               <Sparkles className="h-3 w-3" />
               Tailor resume for this role
@@ -648,7 +691,7 @@ export function CompanySidePanel() {
             </div>
           ) : (
             <button
-              className="flex items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 py-2.5 text-xs font-bold text-white shadow-lg shadow-green-500/25 transition-all hover:shadow-xl hover:shadow-green-500/30 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
+              className="flex min-h-11 items-center justify-center gap-1.5 rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 py-2.5 text-xs font-bold text-white shadow-lg shadow-green-500/25 transition-all hover:shadow-xl hover:shadow-green-500/30 active:scale-[0.98] disabled:opacity-50 disabled:cursor-not-allowed"
               disabled={!primaryJob || applyMutation.isPending}
               onClick={() => {
                 if (!primaryJob) return;
@@ -657,9 +700,9 @@ export function CompanySidePanel() {
               }}
             >
               {applyMutation.isPending ? (
-                <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Submitting…</>
+                <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…</>
               ) : (
-                <><Zap className="h-3.5 w-3.5" /> SUBMIT</>
+                <><CheckCircle2 className="h-3.5 w-3.5" /> Mark as applied</>
               )}
             </button>
           )}
@@ -683,7 +726,6 @@ export function CompanySidePanel() {
         return (
           <div className="rounded-xl border border-gray-100 bg-white p-3">
             <div className="mb-2 flex items-center gap-1.5">
-              <span className="flex h-5 w-5 items-center justify-center rounded-md bg-green-100 text-xs font-bold text-green-700">{++_sec}</span>
               <h2 className="text-xs font-bold text-gray-900">Job Description</h2>
               {jobs.length > 1 && (
                 <span className="ml-auto truncate text-xs font-semibold text-gray-500">{primaryJob.title}</span>
@@ -696,10 +738,23 @@ export function CompanySidePanel() {
               <button
                 type="button"
                 onClick={() => setDescExpanded((v) => !v)}
-                className="mt-1.5 text-xs font-bold text-green-700 hover:text-green-700"
+                className="mt-1.5 min-h-11 text-xs font-bold text-green-700 hover:text-green-700 lg:min-h-8"
               >
                 {descExpanded ? "Show less" : "Show more"}
               </button>
+            )}
+            {/* Most job feeds only hand over the opening lines. Saying so beats
+                leaving "…" at the end of what looks like the whole posting. */}
+            {/(…|\.\.\.)$/.test(description) && primaryJob.apply_url && (
+              <a
+                href={primaryJob.apply_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-1 flex min-h-11 items-center gap-1 text-xs font-bold text-green-700 hover:underline lg:min-h-8"
+              >
+                This is a preview. Read the full description
+                <ArrowUpRight className="h-3 w-3" aria-hidden="true" />
+              </a>
             )}
           </div>
         );
