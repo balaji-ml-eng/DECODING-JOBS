@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import type { Metadata, Viewport } from "next";
 
 import { TopNav } from "@/components/TopNav";
+import { PhoneTabBar } from "@/components/PhoneTabBar";
 import { AssistantWorkspace } from "@/components/AssistantWorkspace";
 
 export const metadata: Metadata = {
@@ -27,6 +28,7 @@ export default function AssistantPage() {
       <Suspense fallback={null}>
         <AssistantWorkspace />
       </Suspense>
+      <PhoneTabBar />
     </div>
   );
 }

@@ -173,13 +173,14 @@ const safely = async (name, fn) => { try { await fn(); } catch (e) { failed++; c
       const top = await page.locator(".maplibregl-marker").evaluateAll((els, min) => els.map((e) => {
         const r = e.getBoundingClientRect();
         return { x: r.left + r.width / 2, y: r.top + r.height / 2, t: e.innerText.trim() };
-      }).filter((p) => /^\d+$/.test(p.t) && p.y > min && p.x > 30 && p.x < innerWidth - 60 && p.y < innerHeight - 140).sort((a, b) => a.y - b.y)[0], toolbarBottom + 20);
+      }).filter((p) => /^\d+$/.test(p.t) && Number(p.t) <= 10 && p.y > min && p.x > 30 && p.x < innerWidth - 60 && p.y < innerHeight - 140).sort((a, b) => a.y - b.y)[0], toolbarBottom + 20);
       if (!top) { console.log(`SKIP  ${label}: no cluster on screen`); await ctx.close(); continue; }
       await page.mouse.click(top.x, top.y);
       await page.waitForTimeout(900);
       const box = await page.locator(".maplibregl-popup-content").first().boundingBox();
       const vw = page.viewportSize().width;
-      check(`${label}: top cluster list (#7) stays clear of the toolbar and on screen`, !!box && box.y >= toolbarBottom - 1 && box.x >= 0 && box.x + box.width <= vw + 1, box ? `pin y=${Math.round(top.y)}, list y=${Math.round(box.y)}-${Math.round(box.y + box.height)}` : "no list");
+      const floor = await page.evaluate(() => { const c = document.querySelector(".fixed.inset-x-3"); return c && getComputedStyle(c).position === "fixed" ? c.getBoundingClientRect().top : innerHeight; });
+      check(`${label}: top cluster list (#7) stays clear of the toolbar and on screen`, !!box && box.y >= toolbarBottom - 1 && box.y + box.height <= floor + 1 && box.x >= 0 && box.x + box.width <= vw + 1, box ? `pin y=${Math.round(top.y)}, list y=${Math.round(box.y)}-${Math.round(box.y + box.height)}` : "no list");
       await page.screenshot({ path: `${OUT}/cluster-${label.toLowerCase()}.png` });
       await ctx.close();
     }

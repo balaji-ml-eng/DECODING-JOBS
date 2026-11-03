@@ -347,6 +347,8 @@ export function TopNav() {
       )}
 
       <div className="flex items-center gap-0.5 ml-auto sm:gap-1">
+        {/* On phones these live in PhoneTabBar, within thumb reach. */}
+        <div className="hidden items-center gap-1 md:flex">
         <AiAssistantLink active={pathname === "/assistant"} />
 
         <NavLink
@@ -367,6 +369,7 @@ export function TopNav() {
           active={pathname === "/profile"}
           hideBelowSm
         />
+        </div>
 
         <FeedbackButton />
 

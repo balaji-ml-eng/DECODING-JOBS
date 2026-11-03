@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { TopNav } from "@/components/TopNav";
+import { PhoneTabBar } from "@/components/PhoneTabBar";
 import { ProfileWorkspace } from "@/components/ProfileWorkspace";
 
 export const metadata: Metadata = {
@@ -13,6 +14,7 @@ export default function ProfilePage() {
     <div className="flex h-dvh w-screen flex-col overflow-hidden bg-white">
       <TopNav />
       <ProfileWorkspace />
+      <PhoneTabBar />
     </div>
   );
 }

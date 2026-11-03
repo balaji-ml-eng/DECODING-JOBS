@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { TopNav } from "@/components/TopNav";
+import { PhoneTabBar } from "@/components/PhoneTabBar";
 import { RegisterCompanyForm } from "@/components/RegisterCompanyForm";
 
 export const metadata: Metadata = {
@@ -15,6 +16,7 @@ export default function RegisterPage() {
       <main className="scroll-thin flex-1 overflow-y-auto bg-gradient-to-b from-green-50/40 to-white">
         <RegisterCompanyForm />
       </main>
+      <PhoneTabBar />
     </div>
   );
 }

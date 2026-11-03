@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { TopNav } from "@/components/TopNav";
+import { PhoneTabBar } from "@/components/PhoneTabBar";
 
 export const metadata: Metadata = {
   title: "Privacy Policy — DECODING JOBS",
@@ -69,6 +70,7 @@ export default function PrivacyPage() {
           </div>
         </article>
       </main>
+      <PhoneTabBar />
     </div>
   );
 }

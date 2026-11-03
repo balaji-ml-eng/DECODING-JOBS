@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { TopNav } from "@/components/TopNav";
+import { PhoneTabBar } from "@/components/PhoneTabBar";
 import { KanbanBoard } from "@/components/KanbanBoard";
 
 export const metadata: Metadata = {
@@ -15,6 +16,7 @@ export default function TrackerPage() {
       <main className="min-h-0 flex-1">
         <KanbanBoard />
       </main>
+      <PhoneTabBar />
     </div>
   );
 }

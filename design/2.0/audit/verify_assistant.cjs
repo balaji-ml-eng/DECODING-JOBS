@@ -28,7 +28,8 @@ const metrics = (page) => page.evaluate(() => {
   const form = r("form:has(textarea)");
   const ta = document.querySelector("form textarea");
   return {
-    vh: innerHeight, formTop: form?.top, formBottom: form?.bottom,
+    // The tab bar sits below the input on phones when it is showing.
+    vh: innerHeight - (r("nav[aria-label=Main]")?.height ?? 0), formTop: form?.top, formBottom: form?.bottom,
     sideScroll: document.documentElement.scrollWidth > innerWidth,
     font: parseFloat(getComputedStyle(ta).fontSize),
     bar: ta.scrollHeight > ta.clientHeight,
@@ -58,7 +59,9 @@ const small = (page) => page.evaluate(() => [...document.querySelectorAll("main 
     const under = await small(page);
     check(`${label}: touch sizes`, under.length === 0, under.join(", "));
 
-    const before = m.formTop;
+    await page.locator("form textarea").focus();
+    await page.waitForTimeout(150);
+    const before = (await metrics(page)).formTop;
     await page.locator("form textarea").fill("Line one\nLine two\nLine three");
     await page.waitForTimeout(150);
     m = await metrics(page);
@@ -67,9 +70,19 @@ const small = (page) => page.evaluate(() => [...document.querySelectorAll("main 
 
     await page.locator("form textarea").fill("Remote frontend roles in Bengaluru");
     await page.locator("form textarea").focus();
-    await page.keyboard.press("Enter");
+    if (opts.hasTouch) {
+      // Tapping Send takes focus off the field, which brings the tab bar back.
+      // The tap still has to land on Send.
+      const send = await page.getByRole("button", { name: "Send message" }).boundingBox();
+      await page.touchscreen.tap(send.x + send.width / 2, send.y + send.height / 2);
+      await page.waitForTimeout(100);
+      check(`${label}: one tap on Send sends, and the input keeps focus`, (await page.locator("form textarea").inputValue()) === "" && await page.evaluate(() => document.activeElement?.tagName === "TEXTAREA"));
+    } else {
+      await page.keyboard.press("Enter");
+      await page.waitForTimeout(100);
+      check(`${label}: input keeps focus after sending`, await page.evaluate(() => document.activeElement?.tagName === "TEXTAREA"));
+    }
     await page.waitForTimeout(350);
-    check(`${label}: input keeps focus after sending`, await page.evaluate(() => document.activeElement?.tagName === "TEXTAREA"));
     check(`${label}: shows a replying indicator`, (await page.getByRole("status", { name: "Assistant is replying" }).count()) === 1);
     await page.waitForTimeout(1800);
     m = await metrics(page);

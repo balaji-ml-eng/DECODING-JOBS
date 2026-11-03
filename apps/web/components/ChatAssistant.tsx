@@ -620,12 +620,9 @@ export function ChatAssistant({
       )}
 
       {/* Composer. One element in one place for the whole conversation, so it
-          never moves or loses focus when the first message is sent. paddingBottom
-          carries env(safe-area-inset-bottom) to clear the iOS home indicator. */}
-      <div
-        className="shrink-0 bg-white px-3 pt-1 sm:px-4"
-        style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" }}
-      >
+          never moves or loses focus when the first message is sent. On phones the
+          tab bar below it clears the iOS home indicator; from md up, this does. */}
+      <div className="shrink-0 bg-white px-3 pb-2 pt-1 sm:px-4 md:pb-[calc(0.5rem+env(safe-area-inset-bottom))]">
         <div className="mx-auto w-full max-w-3xl">
           {activeResume && (
             <div className="mb-2 flex items-center gap-2">
@@ -733,6 +730,8 @@ export function ChatAssistant({
             <button
               type="submit"
               aria-label="Send message"
+              // Keeps focus in the input, so the phone keyboard stays open between messages.
+              onMouseDown={(e) => e.preventDefault()}
               disabled={isBusy || !input.trim()}
               className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-green-600 text-white transition-colors hover:bg-green-700 active:bg-green-800 disabled:bg-gray-100 disabled:text-gray-400"
             >

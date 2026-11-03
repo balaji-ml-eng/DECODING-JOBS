@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 
 import { TopNav } from "@/components/TopNav";
+import { PhoneTabBar } from "@/components/PhoneTabBar";
 
 export const metadata: Metadata = {
   title: "Terms of Service — DECODING JOBS",
@@ -74,6 +75,7 @@ export default function TermsPage() {
           </div>
         </article>
       </main>
+      <PhoneTabBar />
     </div>
   );
 }

@@ -129,7 +129,8 @@ Icons are 16px in controls. Corners are 12px on outer controls and 8px on button
 - [ ] Check whether the production job refresh is running, and how old the listings are
 - [ ] Check whether the API keep-alive from `DEPLOY.md` step 6 is set up
 - [ ] Merge duplicate companies
-- [ ] Hide or mark dead apply links, and add a recurring link check
+- [ ] Hide or mark dead apply links, and add a recurring link check (causes under "Why apply links fail"; 40% failed in the latest sample)
+- [ ] Schedule the job refresh and store each job's real posting date
 - [x] Be honest about short descriptions: show a "Read the full description" link
 - [ ] Prefer full-text job sources
 - [ ] Move sea pins onto land and label approximate locations
@@ -152,13 +153,13 @@ Icons are 16px in controls. Corners are 12px on outer controls and 8px on button
 - [ ] Adopt the design tokens: one green, fewer colours, sizes and shadows
 - [ ] Build shared button, chip, sheet and card components
 - [x] New mobile layout: search on top, thumb-reach bottom bar, no toolbar over content, 44px touch targets
-- [ ] Add visible text labels to phone navigation (screen-reader names are done)
+- [x] Add visible text labels to phone navigation (in the tab bar)
 - [x] Fix the header from 768px to 1023px so Sign in is always reachable
 - [x] Rebuild the mobile filter sheet with a sticky "Show N companies" button
 - [x] Keep the apply action near the top of the company panel by collapsing long role lists
 - [x] Make the Tracker work on phones without a 3-screen-wide board: stage tabs, and a Stage picker on each card instead of dragging
 - [x] One-handed map on phones: +/- within thumb reach, tapping a big cluster zooms in, swipe down closes the company sheet (`design/2.0/audit/verify_onehand.cjs`)
-- [ ] Decide on a bottom tab bar for phones: the main navigation is still at the top of the screen, out of thumb reach
+- [x] Bottom tab bar on phones: Map, AI Assistant, Tracker and Preferences, within thumb reach (`design/2.0/audit/verify_tabs.cjs`)
 - [ ] Remove the duplicate Type and Stage filter groups
 - [ ] Redesign the company panel and job description
 - [x] Redesign the Assistant: input fixed at the bottom and kept above the phone keyboard, quieter messages, 44px controls (`design/2.0/audit/verify_assistant.cjs`)

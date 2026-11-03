@@ -185,6 +185,7 @@ type AccessibleMarkerProps = React.ComponentProps<typeof Marker> & {
 
 const CLUSTER_MAX_ZOOM = 16;
 const CLUSTER_LIST_MAX = 10;
+const CLUSTER_LIST_HEIGHT = 288;
 
 function AccessibleMarker({ label, children, ...markerProps }: AccessibleMarkerProps) {
   const markerRef = useRef<React.ComponentRef<typeof Marker> | null>(null);
@@ -1693,11 +1694,16 @@ export function MapWorkspace() {
           const [lng, lat] = clusterFeature.geometry.coordinates as [number, number];
           const leaves = clusterIndex.getLeaves(openClusterId, 50);
           const totalCount = (clusterFeature as ClusterFeature<{ hiringCount: number }>).properties.point_count;
-          // A fixed upward popup slid under the toolbar for anything near the
-          // top of the map. 360px is the popup's height plus the toolbar's.
+          // Opens toward whichever side has room, clear of the top toolbar and the
+          // phone's bottom controls, and shrinks if neither side fits a full list.
           const point = mapRef.current?.project([lng, lat]);
           const mapWidth = mapRef.current?.getContainer().clientWidth ?? 0;
-          const vertical = point && point.y < 360 ? "top" : "bottom";
+          const mapHeight = mapRef.current?.getContainer().clientHeight ?? 0;
+          const isPhone = mapWidth < 768;
+          const roomAbove = point ? point.y - (isPhone ? 72 : 116) - 24 : CLUSTER_LIST_HEIGHT;
+          const roomBelow = point ? mapHeight - point.y - (isPhone ? 60 : 8) - 24 : 0;
+          const vertical = roomAbove >= CLUSTER_LIST_HEIGHT || roomAbove >= roomBelow ? "bottom" : "top";
+          const listHeight = Math.min(CLUSTER_LIST_HEIGHT, Math.max(roomAbove, roomBelow));
           const horizontal = !point ? "" : point.x < 140 ? "-left" : point.x > mapWidth - 140 ? "-right" : "";
 
           return (
@@ -1710,7 +1716,7 @@ export function MapWorkspace() {
               onClose={() => setOpenClusterId(null)}
               className="cluster-preview-popup"
             >
-              <div className="scroll-thin flex max-h-72 w-64 flex-col overflow-y-auto rounded-xl">
+              <div className="scroll-thin flex w-64 flex-col overflow-y-auto rounded-xl" style={{ maxHeight: listHeight }}>
                 <div className="sticky top-0 z-10 flex items-center justify-between border-b border-gray-100 bg-white px-3 py-2">
                   <span className="text-xs font-bold text-gray-800">{totalCount} companies here</span>
                   <button
@@ -1904,7 +1910,7 @@ export function MapWorkspace() {
 
         {/* Everything except search. A bottom bar on phones, where it's in thumb
             reach and leaves the map clear; inline in the toolbar from md up. */}
-        <div className="fixed inset-x-3 bottom-[max(12px,env(safe-area-inset-bottom))] z-30 flex items-center gap-2 md:static md:contents">
+        <div className="fixed inset-x-3 bottom-[calc(64px+env(safe-area-inset-bottom))] z-30 flex items-center gap-2 md:static md:contents">
         {/* City dropdown */}
         <div className="relative min-w-0 flex-1 md:flex-none md:shrink-0" data-city-dropdown>
           <button

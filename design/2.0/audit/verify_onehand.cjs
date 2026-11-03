@@ -85,7 +85,11 @@ const clusters = async (page) => (await pins(page))
     const moved = (await pins(page)).find((p) => p.label === a.label);
     check("One finger drags the map", !moved || Math.hypot(moved.x - a.x, moved.y - a.y) > 50);
     const z0 = await zoomLevel(page);
-    const empty = { x: 40, y: 200 };
+    // Somewhere with no pin under the finger, or the taps would open that pin.
+    const taken = await pins(page);
+    const spots = [];
+    for (let y = 170; y < 520; y += 20) for (let x = 30; x < 340; x += 20) spots.push({ x, y });
+    const empty = spots.find((s) => taken.every((p) => Math.hypot(p.x - s.x, p.y - s.y) > 60));
     await page.touchscreen.tap(empty.x, empty.y);
     await page.waitForTimeout(90);
     await page.touchscreen.tap(empty.x, empty.y);
