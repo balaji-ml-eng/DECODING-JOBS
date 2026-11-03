@@ -27,7 +27,7 @@ const safely = async (name, fn) => { try { await fn(); } catch (e) { failed++; c
         const fits = await link.evaluate((e) => { const s = e.querySelector("span:last-child"); return s.scrollWidth <= s.clientWidth; });
         check(`${label}: ${name} is thumb-sized and its label fits`, b.height >= 44 && b.width >= 44 && fits);
       }
-      const bar = await page.locator(".fixed.inset-x-3").first().boundingBox();
+      const bar = await page.locator("[data-phone-dock]").boundingBox();
       check(`${label}: map controls sit clear above the tabs`, bar.y + bar.height <= box.y, `${Math.round(bar.y + bar.height)} vs ${Math.round(box.y)}`);
       check(`${label}: no sideways scroll`, await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       await page.screenshot({ path: `${OUT}/tabs-${label}-map.png` });
@@ -35,7 +35,7 @@ const safely = async (name, fn) => { try { await fn(); } catch (e) { failed++; c
       await page.locator("[data-filters-toggle]").tap();
       await page.waitForTimeout(500);
       await page.screenshot({ path: `${OUT}/tabs-${label}-filters.png` });
-      const show = page.getByRole("button", { name: /^Show / }).first();
+      const show = page.getByRole("button", { name: /^Show (results|[0-9])/ }).first();
       const sb = await show.boundingBox();
       check(`${label}: filter sheet's Show button is on screen`, !!sb && sb.y + sb.height <= vp.height, sb && `${Math.round(sb.y + sb.height)} of ${vp.height}`);
       await show.tap();
@@ -46,7 +46,7 @@ const safely = async (name, fn) => { try { await fn(); } catch (e) { failed++; c
       await page.locator(".scroll-thin.h-full.w-full").first().evaluate((e) => { e.scrollTop = e.scrollHeight; });
       await page.waitForTimeout(300);
       const clear = await page.evaluate(() => {
-        const controls = document.querySelector(".fixed.inset-x-3").getBoundingClientRect();
+        const controls = document.querySelector("[data-phone-dock]").getBoundingClientRect();
         const cards = [...document.querySelectorAll("main button, main [class*=cursor-pointer]")].filter((e) => /open/i.test(e.innerText));
         const last = cards.at(-1)?.getBoundingClientRect();
         return last ? last.bottom <= controls.top + 1 : null;

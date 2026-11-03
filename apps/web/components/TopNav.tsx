@@ -325,8 +325,7 @@ export function TopNav() {
 
   return (
     <header
-      className="relative flex h-14 shrink-0 items-center border-b border-green-100 px-3 sm:px-6"
-      style={{ background: "linear-gradient(135deg, #ffffff 0%, #f0fdf4 100%)" }}
+      className="relative flex h-14 shrink-0 items-center border-b border-gray-100 bg-white px-3 sm:px-6"
     >
       <style jsx global>{`
         @keyframes navActiveFadeIn {

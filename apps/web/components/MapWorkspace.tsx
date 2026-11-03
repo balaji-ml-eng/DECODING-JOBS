@@ -9,7 +9,9 @@ import {
   Search,
   Plus,
   Minus,
+  LayoutGrid,
   LocateFixed,
+  Map as MapIcon,
   Loader2,
   MapPinOff,
   AlertTriangle,
@@ -837,7 +839,7 @@ function CompanyGridView({
   // in the bottom bar, hence pb-24), wraps to two at tablet width, and needs a
   // second row at laptop width only while the company panel narrows it.
   const frame = cn(
-    "scroll-thin h-full w-full overflow-y-auto pb-24 pt-[68px] md:pb-6 md:pt-32 xl:pt-20",
+    "scroll-thin h-full w-full overflow-y-auto pb-[76px] pt-[68px] md:pb-6 md:pt-32 xl:pt-20",
     panelOpen && "lg:pr-[396px] xl:pt-32 min-[1400px]:pt-20"
   );
   return (
@@ -1701,7 +1703,7 @@ export function MapWorkspace() {
           const mapHeight = mapRef.current?.getContainer().clientHeight ?? 0;
           const isPhone = mapWidth < 768;
           const roomAbove = point ? point.y - (isPhone ? 72 : 116) - 24 : CLUSTER_LIST_HEIGHT;
-          const roomBelow = point ? mapHeight - point.y - (isPhone ? 60 : 8) - 24 : 0;
+          const roomBelow = point ? mapHeight - point.y - (isPhone ? 68 : 8) - 24 : 0;
           const vertical = roomAbove >= CLUSTER_LIST_HEIGHT || roomAbove >= roomBelow ? "bottom" : "top";
           const listHeight = Math.min(CLUSTER_LIST_HEIGHT, Math.max(roomAbove, roomBelow));
           const horizontal = !point ? "" : point.x < 140 ? "-left" : point.x > mapWidth - 140 ? "-right" : "";
@@ -1713,6 +1715,7 @@ export function MapWorkspace() {
               anchor={`${vertical}${horizontal}` as "bottom"}
               offset={16}
               closeButton={false}
+              focusAfterOpen={false}
               onClose={() => setOpenClusterId(null)}
               className="cluster-preview-popup"
             >
@@ -1782,7 +1785,7 @@ export function MapWorkspace() {
       <div
         className={cn(
           "absolute left-3 right-3 top-3 z-30 flex flex-wrap items-center gap-2 md:left-4 md:right-16 md:top-4",
-          selectedCompanyId !== null && "lg:right-[404px]"
+          selectedCompanyId !== null && "lg:right-[460px]"
         )}
       >
         {/* Search with autocomplete */}
@@ -1908,18 +1911,34 @@ export function MapWorkspace() {
           )}
         </div>
 
-        {/* Everything except search. A bottom bar on phones, where it's in thumb
-            reach and leaves the map clear; inline in the toolbar from md up. */}
-        <div className="fixed inset-x-3 bottom-[calc(64px+env(safe-area-inset-bottom))] z-30 flex items-center gap-2 md:static md:contents">
+        {/* Everything except search. On phones, one panel docked to the tab bar,
+            in thumb reach; inline in the toolbar from md up. It steps aside while
+            typing, when the tab bar it docks to is gone too. */}
+        <div
+          data-phone-dock
+          className="fixed inset-x-0 bottom-[calc(53px+env(safe-area-inset-bottom))] z-30 rounded-t-2xl bg-white px-3 py-2 shadow-[0_-4px_20px_rgba(15,23,42,0.08)] max-md:[[data-typing]_&]:hidden md:static md:contents"
+        >
+        <div className="flex items-center gap-1.5 md:contents">
         {/* City dropdown */}
         <div className="relative min-w-0 flex-1 md:flex-none md:shrink-0" data-city-dropdown>
           <button
             type="button"
             onClick={() => setCityDropdownOpen(!cityDropdownOpen)}
-            className="flex h-11 w-full items-center gap-2 rounded-xl bg-white px-3 text-sm font-semibold shadow-lg transition-all hover:shadow-xl lg:h-10 md:w-auto md:px-4"
+            aria-expanded={cityDropdownOpen}
+            className="flex h-11 w-full items-center gap-1.5 rounded-xl bg-gray-100 px-2.5 text-sm font-semibold transition-all lg:h-10 md:w-auto md:bg-white md:px-4 md:shadow-lg md:hover:shadow-xl"
           >
             <MapPin className="h-4 w-4 shrink-0 text-green-700" />
-            <span className="truncate text-gray-800">{selectedCity}</span>
+            {/* On phones the counts live here, so they don't need a row of their own. */}
+            <span className="min-w-0 text-left leading-tight">
+              <span className="block truncate text-gray-800">{selectedCity}</span>
+              <span className="block truncate text-xs font-medium text-gray-500 md:hidden">
+                {isLoading || !filteredCompanies
+                  ? "Loading…"
+                  : hiringCount > 0
+                    ? `${hiringCount} hiring of ${totalCount}${companiesCapped ? "+" : ""}`
+                    : `${totalCount}${companiesCapped ? "+" : ""} compan${totalCount === 1 ? "y" : "ies"}`}
+              </span>
+            </span>
             {(() => {
               const cc = (cities ?? []).find(c => c.city === selectedCity);
               return cc ? (
@@ -1929,11 +1948,22 @@ export function MapWorkspace() {
             <ChevronDown className={cn("ml-auto h-4 w-4 shrink-0 text-gray-500 transition-transform md:ml-0", cityDropdownOpen && "rotate-180")} />
           </button>
           {cityDropdownOpen && (
-            <div className="absolute bottom-full left-0 z-50 mb-2 w-64 overflow-hidden rounded-xl border border-gray-100 bg-white shadow-2xl md:bottom-auto md:top-full md:mb-0 md:mt-2"
+            <div className="fixed inset-0 z-40 bg-black/30 md:hidden" onClick={() => setCityDropdownOpen(false)} />
+          )}
+          {cityDropdownOpen && (
+            <div className="fixed inset-x-0 bottom-0 z-50 overflow-hidden rounded-t-3xl bg-white pb-[env(safe-area-inset-bottom)] shadow-2xl md:absolute md:inset-x-auto md:bottom-auto md:left-0 md:top-full md:mt-2 md:w-64 md:rounded-xl md:border md:border-gray-100 md:pb-0"
               style={{ animation: "fadeSlideUp 0.15s ease-out" }}
             >
-              <div className="border-b border-gray-50 px-4 py-2.5">
-                <span className="text-xs font-bold uppercase tracking-wider text-gray-500">Select City</span>
+              <div className="flex min-h-12 items-center justify-between border-b border-gray-100 pl-4 pr-1 md:min-h-0 md:py-2.5 md:pr-4">
+                <span className="text-base font-semibold text-gray-900 md:text-xs md:font-bold md:uppercase md:tracking-wider md:text-gray-500">Select city</span>
+                <button
+                  type="button"
+                  onClick={() => setCityDropdownOpen(false)}
+                  aria-label="Close city list"
+                  className="flex h-11 w-11 items-center justify-center rounded-full text-gray-500 md:hidden"
+                >
+                  <X className="h-4 w-4" />
+                </button>
               </div>
               {/* Capped and scrollable. The header plus a full city list is
                   taller than a phone viewport, and the parent card's
@@ -1981,8 +2011,18 @@ export function MapWorkspace() {
           )}
         </div>
 
-        {/* Map / Grid view toggle */}
-        <div className="flex shrink-0 items-center gap-0.5 rounded-xl bg-white shadow-lg lg:h-10 lg:p-1">
+        {/* Map / Grid view toggle. One button on phones, naming where it goes. */}
+        <button
+          type="button"
+          onClick={() => setViewMode(viewMode === "map" ? "grid" : "map")}
+          disabled={webglOk === false}
+          aria-label={viewMode === "map" ? "Grid" : "Map"}
+          title={viewMode === "map" ? "Show as a list" : "Show on the map"}
+          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-gray-600 transition-colors hover:bg-gray-100 disabled:opacity-40 md:hidden"
+        >
+          {viewMode === "map" ? <LayoutGrid className="h-4 w-4" /> : <MapIcon className="h-4 w-4" />}
+        </button>
+        <div className="hidden shrink-0 items-center gap-0.5 rounded-xl md:flex md:bg-white md:shadow-lg lg:h-10 lg:p-1">
           <button
             type="button"
             onClick={() => setViewMode("map")}
@@ -2025,7 +2065,7 @@ export function MapWorkspace() {
             surface (like the Map/Grid toggle) instead of each floating as
             its own pill, so the toolbar reads as a few logical clusters
             instead of 8 equal-weight buttons in a row. */}
-        <div className="flex shrink-0 items-center gap-0.5 rounded-xl bg-white shadow-lg lg:h-10 lg:p-1">
+        <div className="flex shrink-0 items-center gap-0.5 rounded-xl md:bg-white md:shadow-lg lg:h-10 lg:p-1">
           {/* Filters toggle — closed by default on every screen size so the
               map stays full-bleed until you actually want the facet list. */}
           <button
@@ -2048,6 +2088,9 @@ export function MapWorkspace() {
                 {activeFilterCount}
               </span>
             )}
+            {activeFilterCount === 0 && (hiringOnly || forYouOnly) && (
+              <span className="h-2 w-2 rounded-full bg-green-500 md:hidden" aria-hidden="true" />
+            )}
           </button>
 
           {targetRoles.length > 0 && (
@@ -2057,7 +2100,7 @@ export function MapWorkspace() {
               title={`Match your target roles: ${targetRoles.join(", ")}`}
               aria-label="For You"
               className={cn(
-                "flex h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl px-3 text-sm lg:h-8 lg:rounded-lg font-semibold transition-all duration-200",
+                "hidden h-11 min-w-11 items-center justify-center gap-1.5 rounded-xl px-3 text-sm lg:h-8 lg:rounded-lg font-semibold transition-all duration-200 md:flex",
                 forYouOnly
                   ? "bg-green-600 text-white"
                   : "text-gray-600 hover:bg-green-50 hover:text-green-700"
@@ -2069,6 +2112,7 @@ export function MapWorkspace() {
           )}
 
           <SavedSearchesButton filters={currentFilters} onApply={applySavedSearch} grouped />
+        </div>
         </div>
         </div>
 
@@ -2204,7 +2248,12 @@ export function MapWorkspace() {
       // buttons and swallowed every click.
       // On phones they sit low on the right, where a thumb reaches, because these
       // are the one-handed alternative to pinching.
-      <div className="absolute bottom-[84px] right-3 z-20 flex flex-col overflow-hidden rounded-xl bg-white shadow-lg md:bottom-auto md:right-4 md:top-4 md:z-40">
+      // It moves left of the company panel, which would otherwise have its close
+      // button underneath these.
+      <div className={cn(
+        "absolute bottom-[80px] right-3 z-20 flex flex-col overflow-hidden rounded-xl bg-white shadow-lg md:bottom-auto md:right-4 md:top-4 md:z-20",
+        selectedCompanyId !== null && "lg:right-[404px]"
+      )}>
         <button
           type="button"
           // Icon-only buttons need an explicit name — the SVG alone leaves
@@ -2226,12 +2275,12 @@ export function MapWorkspace() {
         >
           <Minus className="h-4 w-4" aria-hidden="true" />
         </button>
-        <div className="mx-2.5 h-px bg-gray-100" />
+        <div className="mx-2.5 h-px bg-gray-100 max-md:[@media(max-height:480px)]:hidden" />
         <button
           type="button"
           aria-label={`Centre the map on ${selectedCity}`}
           title={`Centre the map on ${selectedCity}`}
-          className="flex h-11 w-11 items-center lg:h-10 lg:w-10 justify-center text-gray-500 transition hover:bg-green-50 hover:text-green-700"
+          className="flex h-11 w-11 items-center lg:h-10 lg:w-10 justify-center text-gray-500 transition hover:bg-green-50 hover:text-green-700 max-md:[@media(max-height:480px)]:hidden"
           onClick={() => {
             const c = getCityCenter(selectedCity);
             mapRef.current?.flyTo({ center: [c.longitude, c.latitude], zoom: c.zoom, duration: 600 });
@@ -2249,7 +2298,7 @@ export function MapWorkspace() {
           "Not hiring right now" copy only exists inside a hover tooltip that
           touch users never see. */}
       {viewMode === "map" && !mobileFiltersOpen && (
-        <div className="absolute bottom-[84px] left-3 z-20 flex flex-col items-start gap-2 md:bottom-8 md:left-4">
+        <div className="absolute bottom-[80px] left-3 z-20 flex flex-col items-start gap-2 md:bottom-8 md:left-4">
           {legendOpen && (
             <div
               className="scroll-thin max-h-[50vh] w-56 overflow-y-auto rounded-xl border border-gray-100 bg-white/95 p-3 text-[11px] shadow-[0_12px_40px_rgba(15,23,42,0.14)] backdrop-blur-sm sm:w-60 sm:p-3.5 sm:text-xs"
@@ -2311,17 +2360,11 @@ export function MapWorkspace() {
             onClick={() => setLegendOpen((v) => !v)}
             aria-expanded={legendOpen}
             aria-label={legendOpen ? "Hide map legend" : "Show map legend"}
-            className="flex h-11 items-center gap-1.5 rounded-xl bg-white px-3 text-xs font-semibold text-gray-600 shadow lg:h-9-lg transition-colors hover:text-green-700"
+            className="flex h-11 w-11 items-center justify-center gap-1.5 rounded-xl bg-white text-xs font-semibold text-gray-600 shadow-lg transition-colors hover:text-green-700 md:w-auto md:px-3 lg:h-9"
           >
             <Layers className="h-3.5 w-3.5 text-green-700" aria-hidden="true" />
-            {legendOpen ? "Hide legend" : "Legend"}
+            <span className="hidden md:inline">{legendOpen ? "Hide legend" : "Legend"}</span>
           </button>
-          {!isLoading && !isError && filteredCompanies && (
-            <div className="rounded-lg bg-white/95 px-2.5 py-1 text-xs font-semibold text-gray-700 shadow md:hidden">
-              {totalCount}{companiesCapped ? "+" : ""} compan{totalCount === 1 ? "y" : "ies"}
-              {hiringCount > 0 && <span className="text-green-700"> · {hiringCount} hiring</span>}
-            </div>
-          )}
         </div>
       )}
 
@@ -2335,8 +2378,8 @@ export function MapWorkspace() {
       )}
       <div
         className={cn(
-          "scroll-thin z-50 overflow-y-auto rounded-xl border border-gray-100 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.14)]",
-          "fixed inset-x-3 bottom-3 max-h-[75vh]",
+          "scroll-thin z-50 overflow-y-auto rounded-t-3xl bg-white shadow-[0_12px_40px_rgba(15,23,42,0.14)] md:rounded-xl md:border md:border-gray-100",
+          "fixed inset-x-0 bottom-0 max-h-[85dvh]",
           "md:absolute md:inset-x-auto md:bottom-auto md:left-4 md:top-36 md:z-30 md:w-56 md:max-h-[calc(100%-160px)] xl:top-20 xl:max-h-[calc(100%-100px)]",
           mobileFiltersOpen ? "block" : "hidden"
         )}
@@ -2344,10 +2387,7 @@ export function MapWorkspace() {
       >
         {/* Header */}
         <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-green-50 bg-white/95 px-4 py-3 backdrop-blur-sm">
-          <div className="flex h-6 w-6 items-center justify-center rounded-lg bg-gradient-to-br from-green-100 to-emerald-100">
-            <Filter className="h-3.5 w-3.5 text-green-700" />
-          </div>
-          <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Filters</h3>
+          <h3 className="text-base font-semibold text-gray-900 md:text-xs md:font-bold md:uppercase md:tracking-wider md:text-gray-500">Filters</h3>
           {activeFilterCount > 0 && (
             <span className="rounded-full bg-green-500 px-1.5 py-0.5 text-xs font-bold text-white">
               {activeFilterCount}
@@ -2407,6 +2447,20 @@ export function MapWorkspace() {
             <BriefcaseBusiness className="h-3.5 w-3.5" aria-hidden="true" />
             Only companies hiring now
           </button>
+          {targetRoles.length > 0 && (
+            <button
+              type="button"
+              onClick={() => setForYouOnly((v) => !v)}
+              aria-pressed={forYouOnly}
+              className={cn(
+                "mt-0.5 flex min-h-11 w-full items-center gap-2.5 rounded-lg px-2.5 text-sm font-semibold transition-all md:hidden",
+                forYouOnly ? "bg-green-600 text-white" : "text-gray-700 hover:bg-green-50"
+              )}
+            >
+              <Target className="h-3.5 w-3.5" aria-hidden="true" />
+              Only my target roles
+            </button>
+          )}
         </div>
 
         {/* Type */}
@@ -2553,7 +2607,7 @@ export function MapWorkspace() {
           </div>
         </div>
 
-        <div className="sticky bottom-0 z-10 border-t border-gray-100 bg-white p-3 md:hidden">
+        <div className="sticky bottom-0 z-10 border-t border-gray-100 bg-white p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] md:hidden">
           <button
             type="button"
             onClick={() => setMobileFiltersOpen(false)}
@@ -2567,7 +2621,7 @@ export function MapWorkspace() {
       </div>
 
       {/* ── Attribution ── */}
-      <div className="pointer-events-none absolute bottom-[60px] right-3 text-[10px] text-gray-500 md:bottom-2 md:right-2 md:text-xs">
+      <div className="pointer-events-none absolute bottom-[62px] left-3 text-[10px] text-gray-500 md:bottom-2 md:left-auto md:right-2 md:text-xs">
         MapLibre | © CARTO | © OpenStreetMap
       </div>
     </div>

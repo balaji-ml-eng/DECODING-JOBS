@@ -61,12 +61,18 @@ export function PhoneTabBar() {
     };
   }, []);
 
+  // The map's docked panel steps aside with the bar while typing.
+  useEffect(() => {
+    document.documentElement.toggleAttribute("data-typing", typing);
+    return () => document.documentElement.removeAttribute("data-typing");
+  }, [typing]);
+
   if (typing) return null;
 
   return (
     <nav
       aria-label="Main"
-      className="grid shrink-0 grid-cols-4 border-t border-gray-200 bg-white md:hidden"
+      className="grid shrink-0 grid-cols-4 border-t border-gray-100 bg-white md:hidden"
       style={{ paddingBottom: "env(safe-area-inset-bottom)" }}
     >
       {TABS.map(({ href, label, icon: Icon }) => {
@@ -78,14 +84,14 @@ export function PhoneTabBar() {
             href={href}
             aria-current={active ? "page" : undefined}
             className={cn(
-              "flex h-14 min-w-0 flex-col items-center justify-center gap-0.5 text-xs transition-colors",
+              "flex h-[52px] min-w-0 flex-col items-center justify-center text-xs transition-colors",
               active ? "font-semibold text-green-700" : "font-medium text-gray-500"
             )}
           >
-            <span className="relative">
+            <span className={cn("relative flex h-7 w-12 items-center justify-center rounded-full transition-colors", active && "bg-green-50")}>
               <Icon className="h-5 w-5" aria-hidden="true" />
               {!!badge && (
-                <span className="absolute -right-2.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-green-600 px-1 text-[10px] font-bold text-white">
+                <span className="absolute right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-green-600 px-1 text-[10px] font-bold text-white">
                   {badge}
                 </span>
               )}

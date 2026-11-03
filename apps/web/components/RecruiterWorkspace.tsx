@@ -29,7 +29,7 @@ function CompanyVerification() {
   }, [mutate]);
 
   return (
-    <div className="flex h-full w-full flex-col items-center justify-center gap-4 p-6" style={{ animation: "cardFadeIn 0.4s ease-out both" }}>
+    <div className="flex h-full min-h-0 w-full flex-col items-center gap-4 overflow-y-auto p-6 before:mt-auto before:content-[''] after:mb-auto after:content-['']" style={{ animation: "cardFadeIn 0.4s ease-out both" }}>
       <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-green-600">
         <Building2 className="h-6 w-6 text-white" />
       </div>

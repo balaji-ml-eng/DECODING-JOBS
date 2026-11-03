@@ -30,6 +30,7 @@ export function SavedSearchesButton({
 }) {
   const email = useIdentityStore((s) => s.email);
   const [open, setOpen] = useState(false);
+  const [alignLeft, setAlignLeft] = useState(false);
   const [label, setLabel] = useState("");
   const [alertsEnabled, setAlertsEnabled] = useState(false);
   const panelRef = useRef<HTMLDivElement>(null);
@@ -73,7 +74,12 @@ export function SavedSearchesButton({
     <div className="relative" ref={panelRef}>
       <button
         type="button"
-        onClick={() => setOpen((v) => !v)}
+        onClick={(e) => {
+          // When the toolbar wraps, this button sits near the left edge, and a
+          // panel aligned to its right side would run off the screen.
+          setAlignLeft(e.currentTarget.getBoundingClientRect().right < 300);
+          setOpen((v) => !v);
+        }}
         aria-label="Saved searches"
         className={cn(
           "flex h-11 min-w-11 items-center justify-center gap-1.5 text-sm font-semibold transition-all duration-200",
@@ -89,14 +95,14 @@ export function SavedSearchesButton({
 
       {open && (
         <div
-          className="absolute bottom-[calc(100%+8px)] right-0 z-50 w-72 max-w-[calc(100vw-24px)] overflow-hidden md:bottom-auto md:top-[calc(100%+8px)] rounded-xl border border-gray-100 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.14)]"
+          className={cn("absolute bottom-[calc(100%+8px)] z-50 w-72 max-w-[calc(100vw-24px)] overflow-hidden md:bottom-auto md:top-[calc(100%+8px)] rounded-xl border border-gray-100 bg-white shadow-[0_12px_40px_rgba(15,23,42,0.14)]", alignLeft ? "left-0" : "right-0")}
           style={{ animation: "fadeSlideUp 0.2s ease-out" }}
         >
           <div className="flex items-center gap-2 border-b border-green-50 px-4 py-3">
             <Bookmark className="h-3.5 w-3.5 text-green-700" />
             <h3 className="text-xs font-bold uppercase tracking-wider text-gray-500">Saved searches</h3>
-            <button type="button" onClick={() => setOpen(false)} className="ml-auto rounded-full p-1 text-gray-500 hover:bg-gray-100">
-              <X className="h-3.5 w-3.5" />
+            <button type="button" onClick={() => setOpen(false)} aria-label="Close saved searches" className="-my-3 -mr-3 ml-auto flex h-11 w-11 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 lg:my-0 lg:mr-0 lg:h-7 lg:w-7">
+              <X className="h-4 w-4" />
             </button>
           </div>
 

@@ -179,7 +179,7 @@ const safely = async (name, fn) => { try { await fn(); } catch (e) { failed++; c
       await page.waitForTimeout(900);
       const box = await page.locator(".maplibregl-popup-content").first().boundingBox();
       const vw = page.viewportSize().width;
-      const floor = await page.evaluate(() => { const c = document.querySelector(".fixed.inset-x-3"); return c && getComputedStyle(c).position === "fixed" ? c.getBoundingClientRect().top : innerHeight; });
+      const floor = await page.evaluate(() => { const c = document.querySelector("[data-phone-dock]"); return c && getComputedStyle(c).position === "fixed" ? c.getBoundingClientRect().top : innerHeight; });
       check(`${label}: top cluster list (#7) stays clear of the toolbar and on screen`, !!box && box.y >= toolbarBottom - 1 && box.y + box.height <= floor + 1 && box.x >= 0 && box.x + box.width <= vw + 1, box ? `pin y=${Math.round(top.y)}, list y=${Math.round(box.y)}-${Math.round(box.y + box.height)}` : "no list");
       await page.screenshot({ path: `${OUT}/cluster-${label.toLowerCase()}.png` });
       await ctx.close();
