@@ -13,7 +13,7 @@ One tester's list checked so far. 7 of 10 are confirmed, and 3 need more detail 
 
 | # | Report | Verdict | What we found | Where |
 |---|---|---|---|---|
-| 1 | Map zoom issue | Need detail | Zoom buttons worked in 6 of 6 steps on desktop. Pinch zoom on a real phone is untested. Ask the tester what happened. | - |
+| 1 | Map zoom issue | **Likely on phones** | Zoom buttons worked in 6 of 6 steps on desktop, but they were hidden on phones, so pinching was the only way to zoom. Now fixed; confirm with the tester. | `MapWorkspace.tsx` zoom controls |
 | 2 | Job description not shown fully | **Confirmed** | 412 of 442 sampled jobs (93%) are cut off with "…" in the stored data, so "Show more" can't reveal the rest. Nearly all jobs come from Adzuna. | `scripts/fetch-real-jobs.mjs`, `CompanySidePanel.tsx:679` |
 | 3 | Refresh loses the data | **Confirmed** | The selected company isn't in the URL. The panel closes on refresh, and a company can't be shared by link. | `lib/store`, `ResponsiveShell.tsx:16` |
 | 4 | After applying, refresh shows Apply again | **Confirmed** | Tested locally: after `SUBMIT` and a refresh, the panel offers `SUBMIT` again even though the Tracker shows the job under Applied. "Applied" only comes from in-memory state. | `CompanySidePanel.tsx:341` |
@@ -32,6 +32,17 @@ One tester's list checked so far. 7 of 10 are confirmed, and 3 need more detail 
 | Company websites | 154 | 122 (79%) | 9 (6%) | 23: 16 blocked, 5 timeouts, 2 connection errors |
 
 "Working" only means the page loaded. A loaded page can still show a closed job.
+
+### Why apply links fail (checked 3 Nov 2026)
+
+A new sample of 300 links from the live API, with 31 opened in real Chrome on a phone profile: 179 loaded, **113 returned 410 Gone**, and 8 failed in other ways. `design/2.0/audit/audit_link_age.py` and `audit_link_browser.cjs` reproduce it.
+
+- **The job has closed at the source.** 289 of the 300 links go through Adzuna, and pages arrive quickly showing "Cannot find page" or "this job is no longer available". Slow loading isn't the cause.
+- **Listings aren't being refreshed.** The newest job in the sample was added on 2 Oct, and it arrived in three batches (5 Sep, 7 Sep, 2 Oct). `scripts/fetch-real-jobs.mjs` is run by hand and nothing schedules it. The stale-job sweep only runs at the end of that script, so closed jobs stay active.
+- **The app can't tell.** Every job shows Apply until something marks it inactive, and nothing checks the link.
+- **The real posting date is thrown away.** The import doesn't store Adzuna's `created` date. Our `created_at` is the import date, and it doesn't predict failure: the 2 Oct batch failed more (50%) than the 7 Sep batch (34%).
+- **Some direct links hide their errors.** Meesho and MakeMyTrip links return 200 but show "not found", so status checks alone miss them.
+- **Working Adzuna links are still awkward on phones.** An email-alert popup and a cookie banner cover the job first.
 
 Also: 1,858 of 3,444 companies (54%) have no website at all.
 
@@ -145,10 +156,13 @@ Icons are 16px in controls. Corners are 12px on outer controls and 8px on button
 - [x] Fix the header from 768px to 1023px so Sign in is always reachable
 - [x] Rebuild the mobile filter sheet with a sticky "Show N companies" button
 - [x] Keep the apply action near the top of the company panel by collapsing long role lists
-- [ ] Make the Tracker work on phones without a 3-screen-wide board
+- [x] Make the Tracker work on phones without a 3-screen-wide board: stage tabs, and a Stage picker on each card instead of dragging
+- [x] One-handed map on phones: +/- within thumb reach, tapping a big cluster zooms in, swipe down closes the company sheet (`design/2.0/audit/verify_onehand.cjs`)
+- [ ] Decide on a bottom tab bar for phones: the main navigation is still at the top of the screen, out of thumb reach
 - [ ] Remove the duplicate Type and Stage filter groups
 - [ ] Redesign the company panel and job description
-- [ ] Apply the design to Tracker, Assistant, Preferences and Companies pages
+- [x] Redesign the Assistant: input fixed at the bottom and kept above the phone keyboard, quieter messages, 44px controls (`design/2.0/audit/verify_assistant.cjs`)
+- [ ] Apply the design to Tracker, Preferences and Companies pages
 
 ### Phase 4: Test with real people
 - [ ] Re-run the audit scripts and compare with this baseline
@@ -173,4 +187,4 @@ Icons are 16px in controls. Corners are 12px on outer controls and 8px on button
 ## Still needed
 
 - The other testers' feedback (only one list reviewed so far)
-- From tester #1: what went wrong with zoom, and which device and browser showed no map
+- From tester #1: whether the phone zoom fix solves their zoom issue, and which device and browser showed no map

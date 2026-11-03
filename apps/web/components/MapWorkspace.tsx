@@ -183,6 +183,9 @@ type AccessibleMarkerProps = React.ComponentProps<typeof Marker> & {
   label: string;
 };
 
+const CLUSTER_MAX_ZOOM = 16;
+const CLUSTER_LIST_MAX = 10;
+
 function AccessibleMarker({ label, children, ...markerProps }: AccessibleMarkerProps) {
   const markerRef = useRef<React.ComponentRef<typeof Marker> | null>(null);
 
@@ -1285,7 +1288,7 @@ export function MapWorkspace() {
   const clusterIndex = useMemo(() => {
     const index = new Supercluster<CompanyClusterProps, { hiringCount: number }>({
       radius: 55,
-      maxZoom: 16,
+      maxZoom: CLUSTER_MAX_ZOOM,
       // 4 or fewer nearby companies show as individual pins directly —
       // only a genuinely dense group (5+) collapses into a cluster bubble.
       minPoints: 5,
@@ -1375,7 +1378,29 @@ export function MapWorkspace() {
   // counts change. An inline `() => setOpenClusterId(id)` is a fresh function on
   // every render, which defeats React.memo for every bubble on screen at once —
   // i.e. the whole cluster layer would reconcile on each zoom step.
-  const openCluster = useCallback((id: number) => setOpenClusterId(id), []);
+  // On touch, a big cluster zooms in rather than listing 50 companies in a small
+  // popup, so the map can be explored with one thumb and no pinching. Small
+  // clusters, and ones that can't split further, list their companies.
+  const openCluster = useCallback((id: number) => {
+    const map = mapRef.current;
+    const cluster = mapClusters.find(
+      (f) => (f.properties as { cluster?: boolean }).cluster
+        && (f as ClusterFeature<{ hiringCount: number }>).properties.cluster_id === id
+    ) as ClusterFeature<{ hiringCount: number }> | undefined;
+    if (map && cluster && cluster.properties.point_count > CLUSTER_LIST_MAX && window.matchMedia("(pointer: coarse)").matches) {
+      const expansionZoom = clusterIndex.getClusterExpansionZoom(id);
+      if (expansionZoom <= CLUSTER_MAX_ZOOM) {
+        setOpenClusterId(null);
+        map.easeTo({
+          center: cluster.geometry.coordinates as [number, number],
+          zoom: Math.max(expansionZoom, map.getZoom() + 2),
+          duration: 450,
+        });
+        return;
+      }
+    }
+    setOpenClusterId(id);
+  }, [clusterIndex, mapClusters]);
   // Same reason, for the company pins: stable identities keep React.memo doing
   // its job while the user zooms and pans.
   // The store action is a fixed reference (zustand defines it once), so listing
@@ -1692,9 +1717,9 @@ export function MapWorkspace() {
                     type="button"
                     onClick={() => setOpenClusterId(null)}
                     aria-label="Close list"
-                    className="flex h-8 w-8 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100"
+                    className="-my-1.5 -mr-2 flex h-11 w-11 items-center justify-center rounded-full text-gray-500 hover:bg-gray-100 lg:my-0 lg:mr-0 lg:h-8 lg:w-8"
                   >
-                    <X className="h-3 w-3" />
+                    <X className="h-4 w-4" />
                   </button>
                 </div>
                 <div className="flex flex-col gap-1 p-1.5">
@@ -2171,29 +2196,31 @@ export function MapWorkspace() {
       // block used to win on DOM order alone; giving the toolbar a z-index to
       // clear the Grid overlay would otherwise have parked it on top of these
       // buttons and swallowed every click.
-      <div className="absolute right-3 top-[68px] z-20 flex flex-col overflow-hidden rounded-xl bg-white shadow-lg md:right-4 md:top-4 md:z-40">
+      // On phones they sit low on the right, where a thumb reaches, because these
+      // are the one-handed alternative to pinching.
+      <div className="absolute bottom-[84px] right-3 z-20 flex flex-col overflow-hidden rounded-xl bg-white shadow-lg md:bottom-auto md:right-4 md:top-4 md:z-40">
         <button
           type="button"
           // Icon-only buttons need an explicit name — the SVG alone leaves
           // assistive tech announcing three indistinguishable "button"s.
           aria-label="Zoom in"
           title="Zoom in"
-          className="hidden h-11 w-11 items-center lg:h-10 lg:w-10 justify-center text-gray-500 transition hover:bg-green-50 hover:text-green-700 md:flex"
+          className="flex h-11 w-11 items-center lg:h-10 lg:w-10 justify-center text-gray-500 transition hover:bg-green-50 hover:text-green-700"
           onClick={() => mapRef.current?.zoomIn({ duration: 200 })}
         >
           <Plus className="h-4 w-4" aria-hidden="true" />
         </button>
-        <div className="mx-2.5 hidden h-px bg-gray-100 md:block" />
+        <div className="mx-2.5 h-px bg-gray-100" />
         <button
           type="button"
           aria-label="Zoom out"
           title="Zoom out"
-          className="hidden h-11 w-11 items-center lg:h-10 lg:w-10 justify-center text-gray-500 transition hover:bg-green-50 hover:text-green-700 md:flex"
+          className="flex h-11 w-11 items-center lg:h-10 lg:w-10 justify-center text-gray-500 transition hover:bg-green-50 hover:text-green-700"
           onClick={() => mapRef.current?.zoomOut({ duration: 200 })}
         >
           <Minus className="h-4 w-4" aria-hidden="true" />
         </button>
-        <div className="mx-2.5 hidden h-px bg-gray-100 md:block" />
+        <div className="mx-2.5 h-px bg-gray-100" />
         <button
           type="button"
           aria-label={`Centre the map on ${selectedCity}`}
@@ -2241,7 +2268,7 @@ export function MapWorkspace() {
                   </span>
                   <span>
                     <b className="text-gray-800">Not hiring</b> — smaller and
-                    faded, but still clickable
+                    faded, but you can still open it
                   </span>
                 </li>
                 <li className="flex items-start gap-2">
@@ -2258,7 +2285,7 @@ export function MapWorkspace() {
                   </span>
                   <span>
                     <b className="text-gray-800">Cluster</b> — that many
-                    companies close together. Click to list them
+                    companies close together. Tap or click to open
                   </span>
                 </li>
                 <li className="flex items-start gap-2">
@@ -2266,8 +2293,8 @@ export function MapWorkspace() {
                     <MapPin className="h-2.5 w-2.5" aria-hidden="true" />
                   </span>
                   <span>
-                    <b className="text-gray-800">City pin</b> — zoomed out. Click
-                    to fly in
+                    <b className="text-gray-800">City pin</b> — zoomed out. Tap or
+                    click to fly in
                   </span>
                 </li>
               </ul>

@@ -1,10 +1,64 @@
 "use client";
 
+import { useRef } from "react";
 import { X } from "lucide-react";
 
 import { useMapSelectionStore } from "@/lib/store";
 import { MapWorkspace } from "./MapWorkspace";
 import { CompanySidePanel } from "./CompanySidePanel";
+
+/** How far the sheet must be dragged before letting go closes it. */
+const SWIPE_CLOSE_PX = 90;
+
+/**
+ * Drag the sheet down to close it, the way phone sheets work. The close button
+ * sits at the top of a tall sheet, out of a thumb's reach. Only starts when the
+ * content is scrolled to the top, so it never fights normal scrolling.
+ */
+function useSwipeDownToClose(onClose: () => void) {
+  const sheetRef = useRef<HTMLDivElement>(null);
+  const startY = useRef<number | null>(null);
+  const dragY = useRef(0);
+
+  const release = (close: boolean) => {
+    const sheet = sheetRef.current;
+    startY.current = null;
+    dragY.current = 0;
+    if (close) return onClose();
+    if (sheet) {
+      sheet.style.transition = "transform 0.2s ease-out";
+      sheet.style.transform = "";
+    }
+  };
+
+  return {
+    sheetRef,
+    swipeHandlers: {
+      onTouchStart: (e: React.TouchEvent) => {
+        let scrolled = false;
+        for (let el = e.target as HTMLElement | null; el && el !== sheetRef.current; el = el.parentElement) {
+          if (el.scrollTop > 0) scrolled = true;
+        }
+        startY.current = scrolled ? null : (e.touches[0]?.clientY ?? null);
+      },
+      onTouchMove: (e: React.TouchEvent) => {
+        if (startY.current === null) return;
+        const dy = (e.touches[0]?.clientY ?? startY.current) - startY.current;
+        // Moving up first means scrolling the content, not closing the sheet.
+        if (dy < 0) return release(false);
+        dragY.current = dy;
+        if (sheetRef.current) {
+          sheetRef.current.style.transition = "none";
+          sheetRef.current.style.transform = `translateY(${dy}px)`;
+        }
+      },
+      onTouchEnd: () => {
+        if (startY.current !== null) release(dragY.current > SWIPE_CLOSE_PX);
+      },
+      onTouchCancel: () => release(false),
+    },
+  };
+}
 
 /**
  * The map is full-bleed at all times — the company panel only exists when
@@ -16,6 +70,7 @@ export function ResponsiveShell() {
   const selectedCompanyId = useMapSelectionStore((s) => s.selectedCompanyId);
   const setSelectedCompanyId = useMapSelectionStore((s) => s.setSelectedCompanyId);
   const isOpen = selectedCompanyId !== null;
+  const { sheetRef, swipeHandlers } = useSwipeDownToClose(() => setSelectedCompanyId(null));
 
   return (
     <main className="relative flex min-h-0 flex-1 overflow-hidden">
@@ -66,6 +121,8 @@ export function ResponsiveShell() {
             onClick={() => setSelectedCompanyId(null)}
           />
           <div
+            ref={sheetRef}
+            {...swipeHandlers}
             className="absolute inset-x-0 bottom-0 flex max-h-[85dvh] flex-col overflow-hidden rounded-t-3xl bg-white shadow-2xl"
             style={{ animation: "sheetSlideUp 0.25s cubic-bezier(0.32,0.72,0,1)" }}
           >
@@ -80,7 +137,7 @@ export function ResponsiveShell() {
                 <X className="h-4 w-4" />
               </button>
             </div>
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
               <CompanySidePanel />
             </div>
           </div>

@@ -129,7 +129,15 @@ function RoundStepper({ applicationId, round }: { applicationId: number; round: 
 // silently filling up with stale saves.
 const APPLY_NUDGE_AFTER_DAYS = 3;
 
-function KanbanCard({ card, index }: { card: ApplicationBoardCard; index: number }) {
+function KanbanCard({
+  card,
+  index,
+  onMove,
+}: {
+  card: ApplicationBoardCard;
+  index: number;
+  onMove: (card: ApplicationBoardCard, status: ApplicationStatus) => void;
+}) {
   const { attributes, listeners, setNodeRef, isDragging } = useDraggable({ id: card.id });
   const queryClient = useQueryClient();
   const email = useIdentityStore((s) => s.email);
@@ -163,7 +171,7 @@ function KanbanCard({ card, index }: { card: ApplicationBoardCard; index: number
       {...listeners}
       {...attributes}
       className={cn(
-        "cursor-grab rounded-xl border border-gray-100 bg-white p-3 shadow-[0_2px_8px_rgba(15,23,42,0.06)] transition-all duration-200 active:cursor-grabbing",
+        "rounded-xl border border-gray-100 lg:cursor-grab bg-white p-3 shadow-[0_2px_8px_rgba(15,23,42,0.06)] transition-all duration-200 lg:active:cursor-grabbing",
         isDragging ? "opacity-0" : "hover:-translate-y-0.5 hover:border-green-200 hover:shadow-[0_6px_20px_rgba(22,163,74,0.16)]"
       )}
       style={{ animation: `cardFadeIn 0.35s ease-out ${Math.min(index, 8) * 0.04}s both` }}
@@ -252,6 +260,26 @@ function KanbanCard({ card, index }: { card: ApplicationBoardCard; index: number
           {days === 0 ? "today" : `${days}d ago`}
         </span>
       </div>
+
+      {/* Dragging a card needs a mouse. On touch, this moves it with one tap. */}
+      <label
+        className="mt-2.5 flex items-center gap-2 border-t border-gray-100 pt-2.5 text-xs font-semibold text-gray-500 lg:[@media(pointer:fine)]:hidden"
+        onPointerDown={(e) => e.stopPropagation()}
+      >
+        Stage
+        <select
+          value={card.status}
+          onChange={(e) => onMove(card, e.target.value as ApplicationStatus)}
+          aria-label={`Move ${company.name} to another stage`}
+          className="min-h-11 min-w-0 flex-1 rounded-lg border border-gray-200 bg-white px-2 text-base font-medium text-gray-800 outline-none sm:text-sm"
+        >
+          {COLUMNS.map((column) => (
+            <option key={column.status} value={column.status}>
+              {column.label}
+            </option>
+          ))}
+        </select>
+      </label>
     </div>
   );
 }
@@ -284,12 +312,17 @@ function KanbanColumn({
   icon: Icon,
   accent,
   cards,
+  isCurrent,
+  onMove,
 }: {
   status: ApplicationStatus;
   label: string;
   icon: React.ElementType;
   accent: string;
   cards: ApplicationBoardCard[];
+  /** Below 1024px only the chosen stage shows, instead of a board wider than the screen. */
+  isCurrent: boolean;
+  onMove: (card: ApplicationBoardCard, status: ApplicationStatus) => void;
 }) {
   const { setNodeRef, isOver } = useDroppable({ id: status });
 
@@ -297,11 +330,12 @@ function KanbanColumn({
     <div
       ref={setNodeRef}
       className={cn(
-        "flex h-full min-w-[260px] flex-1 flex-col rounded-xl border transition-all duration-200",
+        "h-full min-w-0 flex-1 flex-col rounded-xl border transition-all duration-200 lg:flex lg:min-w-[260px]",
+        isCurrent ? "flex" : "hidden",
         isOver ? "scale-[1.01] border-green-300 bg-green-50/50 ring-2 ring-green-500/20" : "border-gray-100 bg-gray-50/60"
       )}
     >
-      <div className="flex items-center gap-2 px-3.5 py-3">
+      <div className="hidden items-center gap-2 px-3.5 py-3 lg:flex">
         <span
           className="flex h-6 w-6 items-center justify-center rounded-lg transition-transform"
           style={{ background: `${accent}1a`, transform: isOver ? "scale(1.15)" : "scale(1)" }}
@@ -313,11 +347,14 @@ function KanbanColumn({
           {cards.length}
         </span>
       </div>
-      <div className="scroll-thin flex flex-1 flex-col gap-2 overflow-y-auto px-2.5 pb-3">
+      <div className="scroll-thin flex flex-1 flex-col gap-2 overflow-y-auto px-2.5 pb-3 pt-2.5 lg:pt-0">
         {cards.length === 0 ? (
-          <p className="py-6 text-center text-xs text-gray-500">Drop a card here</p>
+          <p className="py-6 text-center text-xs text-gray-500">
+            <span className="lg:hidden">Nothing at this stage yet</span>
+            <span className="hidden lg:inline">Drop a card here</span>
+          </p>
         ) : (
-          cards.map((card, i) => <KanbanCard key={card.id} card={card} index={i} />)
+          cards.map((card, i) => <KanbanCard key={card.id} card={card} index={i} onMove={onMove} />)
         )}
       </div>
     </div>
@@ -382,6 +419,7 @@ export function KanbanBoard() {
   const queryClient = useQueryClient();
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 6 } }));
   const [activeId, setActiveId] = useState<number | null>(null);
+  const [chosenStage, setChosenStage] = useState<ApplicationStatus | null>(null);
 
   const { data: cards, isLoading, isError } = useQuery({
     queryKey: ["applicationBoard", email],
@@ -418,6 +456,15 @@ export function KanbanBoard() {
   }, [cards]);
 
   const activeCard = cards?.find((c) => c.id === activeId) ?? null;
+  const currentStage =
+    chosenStage ?? COLUMNS.find((c) => cardsByStatus[c.status]?.length)?.status ?? "saved";
+
+  const moveCard = (card: ApplicationBoardCard, status: ApplicationStatus) => {
+    // Stay on this stage, even if that was its last card.
+    setChosenStage(currentStage);
+    statusMutation.mutate({ applicationId: card.id, status });
+    toast.success(`${card.job.company.name} moved to ${COLUMNS.find((c) => c.status === status)?.label}`);
+  };
 
   const handleDragStart = (event: DragStartEvent) => setActiveId(event.active.id as number);
 
@@ -492,10 +539,34 @@ export function KanbanBoard() {
         </div>
       </div>
       <ForwardingBanner />
+      <div className="grid shrink-0 grid-cols-4 gap-1 rounded-xl bg-gray-100 p-1 lg:hidden" role="tablist" aria-label="Application stage">
+        {COLUMNS.map((column) => (
+          <button
+            key={column.status}
+            type="button"
+            role="tab"
+            aria-selected={column.status === currentStage}
+            onClick={() => setChosenStage(column.status)}
+            className={cn(
+              "flex min-h-11 min-w-0 flex-col items-center justify-center rounded-lg px-0.5 py-1 text-xs font-semibold transition-colors",
+              column.status === currentStage ? "bg-white text-gray-900 shadow-sm" : "text-gray-500"
+            )}
+          >
+            <span className="text-sm font-bold">{cardsByStatus[column.status]?.length ?? 0}</span>
+            <span className="max-w-full truncate">{column.label}</span>
+          </button>
+        ))}
+      </div>
       <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
-        <div className="flex flex-1 gap-3 overflow-x-auto">
+        <div className="flex min-h-0 flex-1 gap-3 lg:overflow-x-auto">
           {COLUMNS.map((column) => (
-            <KanbanColumn key={column.status} {...column} cards={cardsByStatus[column.status] ?? []} />
+            <KanbanColumn
+              key={column.status}
+              {...column}
+              cards={cardsByStatus[column.status] ?? []}
+              isCurrent={column.status === currentStage}
+              onMove={moveCard}
+            />
           ))}
         </div>
         <DragOverlay>{activeCard ? <KanbanCardPreview card={activeCard} /> : null}</DragOverlay>

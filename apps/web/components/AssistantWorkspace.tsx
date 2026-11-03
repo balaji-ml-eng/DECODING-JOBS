@@ -81,9 +81,10 @@ export function AssistantWorkspace() {
               <button
                 type="button"
                 onClick={() => setMobileSidebarOpen(false)}
-                className="flex h-7 w-7 items-center justify-center rounded-full bg-gray-100 text-gray-500"
+                aria-label="Close history"
+                className="-my-1 flex h-11 w-11 items-center justify-center rounded-full text-gray-500"
               >
-                <X className="h-3.5 w-3.5" />
+                <X className="h-4 w-4" />
               </button>
             </div>
             <div className="min-h-0 flex-1">

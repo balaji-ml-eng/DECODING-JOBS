@@ -57,7 +57,7 @@ export function ChatHistorySidebar({
       <button
         type="button"
         onClick={onNew}
-        className="mb-2 flex shrink-0 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2.5 text-sm font-semibold text-gray-700 shadow-sm transition-all hover:border-green-200 hover:bg-green-50 hover:text-green-700 active:scale-[0.98]"
+        className="mb-2 flex min-h-11 shrink-0 items-center gap-2 rounded-xl border border-gray-200 bg-white px-3 text-sm font-semibold text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900"
       >
         <Plus className="h-4 w-4" />
         New chat
@@ -69,13 +69,13 @@ export function ChatHistorySidebar({
             key={c.id}
             className={cn(
               "group flex items-center gap-2 rounded-lg px-2.5 py-2 text-left transition-colors",
-              c.id === selectedId ? "bg-green-100/70" : "hover:bg-gray-100"
+              c.id === selectedId ? "bg-gray-200/70" : "hover:bg-gray-100"
             )}
           >
             <button type="button" onClick={() => onSelect(c.id)} className="flex min-w-0 flex-1 items-center gap-2 text-left">
-              <MessageSquare className={cn("h-3.5 w-3.5 shrink-0", c.id === selectedId ? "text-green-700" : "text-gray-500")} />
+              <MessageSquare className={cn("h-3.5 w-3.5 shrink-0", c.id === selectedId ? "text-gray-700" : "text-gray-500")} />
               <div className="min-w-0 flex-1">
-                <p className={cn("truncate text-xs", c.id === selectedId ? "font-semibold text-green-800" : "text-gray-700")}>
+                <p className={cn("truncate text-xs", c.id === selectedId ? "font-semibold text-gray-900" : "text-gray-700")}>
                   {c.title}
                 </p>
                 <p className="text-xs text-gray-500">{relativeTime(c.updated_at)}</p>
@@ -87,8 +87,9 @@ export function ChatHistorySidebar({
                 e.stopPropagation();
                 deleteMutation.mutate(c.id);
               }}
-              className="shrink-0 rounded-md p-1 text-gray-500 opacity-0 transition-all hover:bg-red-50 hover:text-red-500 group-hover:opacity-100"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-md text-gray-500 transition-all hover:bg-red-50 hover:text-red-500 focus-visible:opacity-100 lg:h-7 lg:w-7 [@media(hover:hover)]:opacity-0 [@media(hover:hover)]:group-hover:opacity-100"
               title="Delete conversation"
+              aria-label="Delete conversation"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>

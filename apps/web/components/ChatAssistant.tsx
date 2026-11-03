@@ -4,12 +4,15 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Send,
+  ArrowDown,
+  ArrowUp,
+  Building2,
+  GraduationCap,
   Loader2,
   MapPin,
+  MessagesSquare,
   Briefcase,
-  User,
-  RotateCcw,
+  Plus,
   Paperclip,
   FileText,
   X,
@@ -38,10 +41,10 @@ import { ResumeAnalysisCard } from "./ResumeAnalysisCard";
 import { MarkdownMessage } from "./MarkdownMessage";
 
 const STARTER_PROMPTS = [
-  "Remote frontend roles in Bengaluru",
-  "Fintech companies hiring in Chennai",
-  "AI internships for freshers",
-  "Help me prep for a backend engineer interview",
+  { text: "Remote frontend roles in Bengaluru", icon: Briefcase },
+  { text: "Fintech companies hiring in Chennai", icon: Building2 },
+  { text: "AI internships for freshers", icon: GraduationCap },
+  { text: "Help me prep for a backend engineer interview", icon: MessagesSquare },
 ];
 
 const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
@@ -98,9 +101,9 @@ function JobResultCard({ job }: { job: ChatJobResult }) {
         setSelectedCompanyId(job.company_id);
         router.push("/");
       }}
-      className="flex w-full items-center gap-2.5 rounded-xl border border-gray-100 bg-white p-2.5 text-left transition-all hover:-translate-y-0.5 hover:border-green-200 hover:shadow-[0_6px_20px_rgba(22,163,74,0.16)]"
+      className="flex min-h-11 w-full items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 text-left transition-colors hover:border-gray-300 hover:bg-gray-50"
     >
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-green-50 to-emerald-50 text-xs font-bold text-green-700">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-100 bg-gray-50 text-xs font-semibold text-gray-600">
         {logo ? (
           <img src={logo} alt={job.company_name} className="h-full w-full object-contain p-1" />
         ) : (
@@ -108,12 +111,12 @@ function JobResultCard({ job }: { job: ChatJobResult }) {
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-bold text-gray-900">{job.title}</p>
+        <p className="truncate text-sm font-semibold text-gray-900">{job.title}</p>
         <p className="truncate text-xs text-gray-500">{job.company_name}</p>
       </div>
       {job.city && (
         <span className="flex shrink-0 items-center gap-0.5 text-xs text-gray-500">
-          <MapPin className="h-2.5 w-2.5" />
+          <MapPin className="h-3 w-3" />
           {job.city}
         </span>
       )}
@@ -133,9 +136,9 @@ function CompanyResultCard({ company }: { company: ChatCompanyResult }) {
         setSelectedCompanyId(company.id);
         router.push("/");
       }}
-      className="flex w-full items-center gap-2.5 rounded-xl border border-gray-100 bg-white p-2.5 text-left transition-all hover:-translate-y-0.5 hover:border-green-200 hover:shadow-[0_6px_20px_rgba(22,163,74,0.16)]"
+      className="flex min-h-11 w-full items-center gap-3 rounded-xl border border-gray-200 bg-white p-3 text-left transition-colors hover:border-gray-300 hover:bg-gray-50"
     >
-      <div className="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-xl bg-gradient-to-br from-green-50 to-emerald-50 text-xs font-bold text-green-700">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-lg border border-gray-100 bg-gray-50 text-xs font-semibold text-gray-600">
         {logo ? (
           <img src={logo} alt={company.name} className="h-full w-full object-contain p-1" />
         ) : (
@@ -143,16 +146,25 @@ function CompanyResultCard({ company }: { company: ChatCompanyResult }) {
         )}
       </div>
       <div className="min-w-0 flex-1">
-        <p className="truncate text-xs font-bold text-gray-900">{company.name}</p>
+        <p className="truncate text-sm font-semibold text-gray-900">{company.name}</p>
         <p className="truncate text-xs text-gray-500">{company.sector || "—"} · {company.city || "—"}</p>
       </div>
       {company.active_job_count > 0 && (
-        <span className="flex shrink-0 items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs font-bold text-green-700">
-          <Briefcase className="h-2.5 w-2.5" />
+        <span className="flex shrink-0 items-center gap-1 rounded-full bg-green-50 px-2 py-0.5 text-xs font-semibold text-green-700">
+          <Briefcase className="h-3 w-3" />
           {company.active_job_count}
         </span>
       )}
     </button>
+  );
+}
+
+/** Hidden on phones, where the reply needs the width more than the mark does. */
+function AssistantMark() {
+  return (
+    <div className="hidden h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-green-50 text-green-700 sm:flex">
+      <Sparkles className="h-3.5 w-3.5" />
+    </div>
   );
 }
 
@@ -174,6 +186,7 @@ export function ChatAssistant({
   const [activeResumeId, setActiveResumeId] = useState<number | null>(null);
   const [resumeMenuOpen, setResumeMenuOpen] = useState(false);
   const [loadingHistory, setLoadingHistory] = useState(false);
+  const [showJump, setShowJump] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -204,6 +217,9 @@ export function ChatAssistant({
   // Load a conversation's turns when the sidebar selects one (or clear on "New chat").
   useEffect(() => {
     if (conversationId === ownConversationIdRef.current) return;
+
+    stickToBottomRef.current = true;
+    setShowJump(false);
 
     if (conversationId === null) {
       setTurns([]);
@@ -294,6 +310,7 @@ export function ChatAssistant({
     setInput("");
     // Sending is an explicit request to follow the conversation again.
     stickToBottomRef.current = true;
+    setShowJump(false);
 
     const history: ChatMessage[] = nextTurns.map((t) => ({ role: t.role, content: t.content }));
     chatMutation.mutate({ messages: history, resumeId: activeResumeId, jobId, conversationId });
@@ -375,124 +392,37 @@ export function ChatAssistant({
     if (!el) return;
     el.style.height = "auto";
     el.style.height = `${Math.min(el.scrollHeight, 160)}px`;
+    el.style.overflowY = el.scrollHeight > 160 ? "auto" : "hidden";
   }, [input]);
 
-  const hasStarted = turns.length > 0;
+  // Keeps the composer above the phone keyboard. iOS Safari doesn't resize the
+  // page for the keyboard, it only shrinks the visual viewport, so the page
+  // height follows that instead. Ignored while pinch-zoomed, when the visual
+  // viewport is small for a different reason.
+  useEffect(() => {
+    const vv = window.visualViewport;
+    if (!vv) return;
+    const root = document.documentElement;
+    const sync = () => {
+      if (Math.abs(vv.scale - 1) > 0.01) {
+        root.style.removeProperty("--chat-height");
+        return;
+      }
+      root.style.setProperty("--chat-height", `${vv.height}px`);
+      window.scrollTo(0, 0);
+    };
+    sync();
+    vv.addEventListener("resize", sync);
+    vv.addEventListener("scroll", sync);
+    return () => {
+      vv.removeEventListener("resize", sync);
+      vv.removeEventListener("scroll", sync);
+      root.style.removeProperty("--chat-height");
+    };
+  }, []);
 
-  const composer = (
-    <div className="mx-auto w-full max-w-3xl">
-      {activeResume && (
-        <div className="mb-2 flex items-center gap-2">
-          <div className="relative" ref={resumeMenuRef}>
-            {/* Two sibling buttons, not a button nested in a button — the
-                latter is invalid HTML and trips React's hydration checks. */}
-            <div className="flex items-center gap-0.5 rounded-full bg-green-50 text-xs font-semibold text-green-700">
-              <button
-                type="button"
-                onClick={() => setResumeMenuOpen((v) => !v)}
-                title="Choose resume"
-                className="flex items-center gap-1.5 rounded-l-full py-1.5 pl-3 pr-1 transition-colors hover:bg-green-100"
-              >
-                <FileText className="h-3 w-3" />
-                <span className="max-w-[160px] truncate">{activeResume.filename}</span>
-                {(resumes?.length ?? 0) > 1 && (
-                  <ChevronDown className={cn("h-3 w-3 transition-transform", resumeMenuOpen && "rotate-180")} />
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveResumeId(null)}
-                aria-label="Detach resume"
-                title="Detach resume"
-                className="flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-green-200/60 lg:h-7 lg:w-7"
-              >
-                <X className="h-2.5 w-2.5" />
-              </button>
-            </div>
-            {resumeMenuOpen && (resumes?.length ?? 0) > 1 && (
-              <div
-                className="absolute bottom-full left-0 z-20 mb-1.5 w-56 overflow-hidden rounded-xl border border-gray-100 bg-white py-1 shadow-[0_12px_40px_rgba(15,23,42,0.14)]"
-                style={{ animation: "panelFadeIn 0.15s ease-out" }}
-              >
-                {resumes?.map((r) => (
-                  <button
-                    key={r.id}
-                    type="button"
-                    onClick={() => {
-                      setActiveResumeId(r.id);
-                      setResumeMenuOpen(false);
-                    }}
-                    className={cn(
-                      "flex w-full items-center justify-between gap-2 px-3 py-2 text-left text-xs transition-colors",
-                      r.id === activeResumeId ? "bg-green-50 font-semibold text-green-700" : "text-gray-600 hover:bg-gray-50"
-                    )}
-                  >
-                    <span className="truncate">{r.filename}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-      <form
-        className="flex items-end gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          send(input);
-        }}
-      >
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept=".pdf,.docx"
-          className="hidden"
-          onChange={(e) => {
-            handleFile(e.target.files?.[0]);
-            e.target.value = "";
-          }}
-        />
-        <button
-          type="button"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={isBusy}
-          title="Attach your resume"
-          aria-label="Attach your resume"
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl border border-gray-200 bg-white text-gray-500 transition-all hover:border-green-200 hover:bg-green-50 hover:text-green-700 disabled:opacity-40"
-        >
-          <Paperclip className="h-4 w-4" />
-        </button>
-        <textarea
-          ref={inputRef}
-          value={input}
-          rows={1}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            // Enter sends, Shift+Enter starts a new line — what every chat
-            // product does, and the only way to write a multi-line prompt.
-            if (e.key === "Enter" && !e.shiftKey) {
-              e.preventDefault();
-              send(input);
-            }
-          }}
-          // Kept short on purpose: the composer textarea is only ~220px wide
-          // at 360px, so any longer placeholder wraps and looks broken against
-          // the one-row height. The full hint ("…or interview prep") already
-          // lives in the header subtitle, so nothing is lost.
-          placeholder="Ask about jobs…"
-          className="scroll-thin min-h-11 flex-1 resize-none rounded-xl border border-gray-200 bg-gray-50/60 px-4 py-3 text-sm leading-relaxed outline-none transition-all focus:border-green-300 focus:bg-white focus:ring-4 focus:ring-green-400/15"
-        />
-        <button
-          type="submit"
-          aria-label="Send message"
-          disabled={isBusy || !input.trim()}
-          className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-green-500 to-emerald-600 text-white shadow-md shadow-green-500/20 transition-all hover:shadow-lg active:scale-95 disabled:opacity-40"
-        >
-          {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4" />}
-        </button>
-      </form>
-    </div>
-  );
+  const hasStarted = turns.length > 0;
+  const hasContext = hasStarted || !!contextJob;
 
   return (
     <div className="flex h-full min-h-0 w-full flex-col bg-white">
@@ -519,160 +449,147 @@ export function ChatAssistant({
         }
       `}</style>
 
-      {/* Header */}
-      <div className="flex shrink-0 items-center gap-2.5 border-b border-emerald-100 bg-gradient-to-r from-white to-green-50/40 px-3 py-3 sm:px-5">
-        {email && (
-          <button
-            type="button"
-            onClick={onOpenHistory}
-            title="Conversation history"
-            aria-label="Conversation history"
-            className="flex h-11 w-11 shrink-0 lg:h-8 lg:w-8 items-center justify-center rounded-lg text-gray-500 transition-all hover:bg-green-50 hover:text-green-700 lg:hidden"
-          >
-            <PanelLeft className="h-4 w-4" />
-          </button>
-        )}
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-green-500 to-emerald-600 shadow-md shadow-green-500/20">
-          <Sparkles className="h-4 w-4 text-white" />
-        </div>
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-bold text-gray-900">AI Job Search Assistant</p>
-          {contextJob ? (
-            <p className="truncate text-xs text-green-700">
-              Prepping for {contextJob.title} @ {contextJob.company.name}
-            </p>
-          ) : (
-            <p className="truncate text-xs text-gray-500">Ask about real jobs, companies, or interview prep</p>
+      {/* Header: only when it has a job to do. The page already has the top nav,
+          and a second title bar over an empty chat just takes up the screen. */}
+      {(hasContext || email) && (
+        <div
+          className={cn(
+            "flex min-h-12 shrink-0 items-center gap-1 border-b border-gray-100 px-1 sm:px-3 lg:px-4",
+            !hasContext && "lg:hidden"
+          )}
+        >
+          {email && (
+            <button
+              type="button"
+              onClick={onOpenHistory}
+              title="Conversation history"
+              aria-label="Conversation history"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 lg:hidden"
+            >
+              <PanelLeft className="h-4 w-4" />
+            </button>
+          )}
+          <div className={cn("min-w-0 flex-1", !email && "pl-2 sm:pl-0")}>
+            <p className="truncate text-sm font-semibold text-gray-900">AI Assistant</p>
+            {contextJob && (
+              <p className="truncate text-xs text-gray-500">
+                Prepping for {contextJob.title} at {contextJob.company.name}
+              </p>
+            )}
+          </div>
+          {hasStarted && (
+            <button
+              type="button"
+              onClick={() => {
+                // Signed-out chats have no conversation id, so the id alone
+                // wouldn't change and the load-history effect would never clear.
+                setTurns([]);
+                setActiveResumeId(null);
+                setShowJump(false);
+                stickToBottomRef.current = true;
+                ownConversationIdRef.current = null;
+                onConversationChange(null);
+              }}
+              title="Start a new chat"
+              aria-label="Start a new chat"
+              className="flex min-h-11 min-w-11 shrink-0 items-center justify-center gap-1.5 rounded-lg px-2 text-xs font-semibold text-gray-600 transition-colors hover:bg-gray-100 hover:text-gray-900 lg:min-h-8 lg:min-w-8"
+            >
+              <Plus className="h-4 w-4" />
+              <span className="hidden sm:inline">New chat</span>
+            </button>
           )}
         </div>
-        {hasStarted && (
-          <button
-            type="button"
-            onClick={() => onConversationChange(null)}
-            title="Start a new chat"
-            className="flex shrink-0 items-center gap-1.5 rounded-lg bg-white px-2.5 py-1.5 text-xs font-semibold text-gray-600 shadow-sm transition-all hover:bg-green-50 hover:text-green-700"
-          >
-            <RotateCcw className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">New chat</span>
-          </button>
-        )}
-      </div>
+      )}
 
       {!hasStarted ? (
-        // Claude/ChatGPT-style empty state: greeting + composer centered together.
         <div
-          className="scroll-thin flex min-h-0 flex-1 flex-col items-center overflow-y-auto px-4 py-6 sm:py-10"
+          className="scroll-thin flex min-h-0 flex-1 flex-col overflow-y-auto px-4"
           style={{ animation: "heroFadeIn 0.35s ease-out both" }}
         >
           {/* my-auto, not justify-center. justify-center on a flex column that
-              overflows clips the *top* — on a short phone the greeting and the
-              attach button were cut off with no way to scroll to them. */}
-          <div className="my-auto flex w-full flex-col items-center gap-6">
-            <div className="flex flex-col items-center gap-4 text-center">
-              <div className="flex h-14 w-14 items-center justify-center rounded-xl bg-gradient-to-br from-green-50 to-emerald-50 shadow-inner">
-                <Sparkles className="h-7 w-7 text-green-700" />
-              </div>
-              <div>
-                <p className="text-base font-semibold text-gray-900">What are you looking for?</p>
-                <p className="mt-1 text-xs text-gray-500">
-                  Ask about real jobs and companies, or attach your resume for feedback.
-                </p>
-              </div>
+              overflows clips the *top* — with the keyboard open on a short phone
+              the greeting would be cut off with no way to scroll to it. */}
+          <div className="my-auto flex flex-col items-center py-6 text-center">
+            <div className="mb-4 flex h-10 w-10 items-center justify-center rounded-xl bg-green-50 text-green-700">
+              <Sparkles className="h-5 w-5" />
             </div>
-            {composer}
-            <div className="flex flex-wrap justify-center gap-2">
-              {STARTER_PROMPTS.map((prompt) => (
-                <button
-                  key={prompt}
-                  type="button"
-                  onClick={() => send(prompt)}
-                  className="min-h-11 rounded-full border border-gray-200 bg-white px-3 text-xs font-medium lg:min-h-8 text-gray-600 transition-all hover:border-green-200 hover:bg-green-50 hover:text-green-700"
-                >
-                  {prompt}
-                </button>
-              ))}
-            </div>
+            <h1 className="text-xl font-semibold tracking-tight text-gray-900 sm:text-2xl">What are you looking for?</h1>
+            <p className="mt-1.5 max-w-sm text-sm text-gray-500">
+              Ask about real jobs and companies, or attach your resume for feedback.
+            </p>
+          </div>
+          <div className="mx-auto grid w-full max-w-3xl shrink-0 grid-cols-1 gap-2 pb-3 sm:grid-cols-2">
+            {STARTER_PROMPTS.map(({ text, icon: Icon }) => (
+              <button
+                key={text}
+                type="button"
+                onClick={() => send(text)}
+                className="flex min-h-11 items-center gap-2.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-left text-sm text-gray-700 transition-colors hover:border-gray-300 hover:bg-gray-50 hover:text-gray-900"
+              >
+                <Icon className="h-4 w-4 shrink-0 text-gray-500" />
+                {text}
+              </button>
+            ))}
           </div>
         </div>
       ) : (
-        <>
+        <div className="relative flex min-h-0 flex-1 flex-col">
           {/* Messages */}
           <div
             ref={scrollRef}
             onScroll={(e) => {
               const el = e.currentTarget;
-              stickToBottomRef.current =
-                el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+              const nearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+              stickToBottomRef.current = nearBottom;
+              setShowJump(!nearBottom);
             }}
-            className="scroll-thin min-h-0 flex-1 overflow-y-auto px-4 py-4 pb-6"
+            className="scroll-thin min-h-0 flex-1 overflow-y-auto px-4 pb-6 pt-5"
           >
-            <div className="mx-auto flex max-w-3xl flex-col gap-4">
-              {turns.map((turn, i) => (
-                <div
-                  key={i}
-                  className={cn("flex gap-2.5", turn.role === "user" ? "flex-row-reverse" : "flex-row")}
-                  style={{ animation: "turnFadeIn 0.25s ease-out both" }}
-                >
-                  <div
-                    className={cn(
-                      "flex h-7 w-7 shrink-0 items-center justify-center rounded-lg",
-                      turn.role === "user" ? "bg-gray-100 text-gray-500" : "bg-green-600 text-white"
-                    )}
-                  >
-                    {turn.role === "user" ? <User className="h-3.5 w-3.5" /> : <Sparkles className="h-3.5 w-3.5" />}
-                  </div>
-                  <div
-                    className={cn(
-                      "flex flex-col gap-2",
-                      turn.role === "user"
-                        ? "max-w-[85%] items-end"
-                        // min-w-0 + flex-1, not max-w-[95%]. The avatar beside this
-                        // column already takes ~38px, so "95% of the row" plus the
-                        // avatar overflowed the container. At desktop width 95% of
-                        // 768px still fit, so it went unnoticed — on a phone it
-                        // pushed the job cards off the right edge.
-                        : "min-w-0 flex-1 items-start"
-                    )}
-                  >
-                    <div
-                      className={cn(
-                        "rounded-xl px-3.5 py-2.5 shadow-sm",
-                        turn.role === "user"
-                          ? "whitespace-pre-wrap bg-green-600 text-sm leading-relaxed text-white"
-                          : "border border-gray-100 bg-white text-gray-700"
-                      )}
-                    >
-                      {turn.role === "user" ? turn.content : <MarkdownMessage content={turn.content} />}
+            <div className="mx-auto flex max-w-3xl flex-col gap-6">
+              {turns.map((turn, i) =>
+                turn.role === "user" ? (
+                  <div key={i} className="flex justify-end" style={{ animation: "turnFadeIn 0.25s ease-out both" }}>
+                    <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-gray-100 px-4 py-2.5 text-sm leading-relaxed text-gray-900 sm:max-w-[75%]">
+                      {turn.content}
                     </div>
-                    {turn.resume && <ResumeAnalysisCard resume={turn.resume} />}
-                    {turn.jobs && turn.jobs.length > 0 && (
-                      <div className="flex w-full flex-col gap-1.5">
-                        {turn.jobs.map((job) => (
-                          <JobResultCard key={job.id} job={job} />
-                        ))}
-                      </div>
-                    )}
-                    {turn.companies && turn.companies.length > 0 && (
-                      <div className="flex w-full flex-col gap-1.5">
-                        {turn.companies.map((company) => (
-                          <CompanyResultCard key={company.id} company={company} />
-                        ))}
-                      </div>
-                    )}
                   </div>
-                </div>
-              ))}
+                ) : (
+                  <div key={i} className="flex gap-3" style={{ animation: "turnFadeIn 0.25s ease-out both" }}>
+                    <AssistantMark />
+                    {/* min-w-0 + flex-1 so wide tables and job cards stay inside
+                        the column on a phone instead of pushing past the edge. */}
+                    <div className="flex min-w-0 flex-1 flex-col gap-3 sm:pt-0.5">
+                      <div className="text-gray-800">
+                        <MarkdownMessage content={turn.content} />
+                      </div>
+                      {turn.resume && <ResumeAnalysisCard resume={turn.resume} />}
+                      {turn.jobs && turn.jobs.length > 0 && (
+                        <div className="flex w-full flex-col gap-2">
+                          {turn.jobs.map((job) => (
+                            <JobResultCard key={job.id} job={job} />
+                          ))}
+                        </div>
+                      )}
+                      {turn.companies && turn.companies.length > 0 && (
+                        <div className="flex w-full flex-col gap-2">
+                          {turn.companies.map((company) => (
+                            <CompanyResultCard key={company.id} company={company} />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )
+              )}
 
               {isBusy && (
-                <div className="flex gap-2.5">
-                  <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-green-600 text-white">
-                    <Sparkles className="h-3.5 w-3.5" />
-                  </div>
-                  <div className="flex items-center gap-1 rounded-xl border border-gray-100 bg-white px-4 py-3 shadow-sm">
+                <div className="flex gap-3" role="status" aria-label="Assistant is replying">
+                  <AssistantMark />
+                  <div className="flex h-7 items-center gap-1">
                     {[0, 1, 2].map((i) => (
                       <span
                         key={i}
-                        className="h-1.5 w-1.5 rounded-full bg-green-400"
+                        className="h-1.5 w-1.5 rounded-full bg-gray-400"
                         style={{ animation: `typingBounce 1.2s ease-in-out ${i * 0.15}s infinite` }}
                       />
                     ))}
@@ -682,17 +599,149 @@ export function ChatAssistant({
             </div>
           </div>
 
-          {/* Input */}
-          {/* paddingBottom carries env(safe-area-inset-bottom) so the composer
-              clears the iOS home indicator instead of sitting under it. */}
-          <div
-            className="shrink-0 border-t border-gray-100 bg-white px-3 pt-3"
-            style={{ paddingBottom: "calc(0.75rem + env(safe-area-inset-bottom))" }}
-          >
-            {composer}
-          </div>
-        </>
+          {/* Fades replies out into the composer instead of a hard divider. */}
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-6 bg-gradient-to-t from-white to-transparent" />
+
+          {showJump && (
+            <button
+              type="button"
+              onClick={() => {
+                stickToBottomRef.current = true;
+                setShowJump(false);
+                scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight, behavior: "smooth" });
+              }}
+              aria-label="Scroll to latest message"
+              className="absolute bottom-3 left-1/2 flex h-11 w-11 -translate-x-1/2 items-center justify-center rounded-full border border-gray-200 bg-white text-gray-600 shadow-[0_4px_16px_rgba(15,23,42,0.12)] transition-colors hover:bg-gray-50 hover:text-gray-900 lg:h-9 lg:w-9"
+            >
+              <ArrowDown className="h-4 w-4" />
+            </button>
+          )}
+        </div>
       )}
+
+      {/* Composer. One element in one place for the whole conversation, so it
+          never moves or loses focus when the first message is sent. paddingBottom
+          carries env(safe-area-inset-bottom) to clear the iOS home indicator. */}
+      <div
+        className="shrink-0 bg-white px-3 pt-1 sm:px-4"
+        style={{ paddingBottom: "calc(0.5rem + env(safe-area-inset-bottom))" }}
+      >
+        <div className="mx-auto w-full max-w-3xl">
+          {activeResume && (
+            <div className="mb-2 flex items-center gap-2">
+              <div className="relative" ref={resumeMenuRef}>
+                {/* Two sibling buttons, not a button nested in a button — the
+                    latter is invalid HTML and trips React's hydration checks. */}
+                <div className="flex items-center gap-0.5 rounded-full bg-gray-100 text-xs font-medium text-gray-700">
+                  <button
+                    type="button"
+                    onClick={() => setResumeMenuOpen((v) => !v)}
+                    title="Choose resume"
+                    className="flex min-h-11 items-center gap-1.5 rounded-l-full pl-3 pr-1 transition-colors hover:bg-gray-200 lg:min-h-7"
+                  >
+                    <FileText className="h-3.5 w-3.5" />
+                    <span className="max-w-[160px] truncate">{activeResume.filename}</span>
+                    {(resumes?.length ?? 0) > 1 && (
+                      <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", resumeMenuOpen && "rotate-180")} />
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setActiveResumeId(null)}
+                    aria-label="Detach resume"
+                    title="Detach resume"
+                    className="flex h-11 w-11 items-center justify-center rounded-full transition-colors hover:bg-gray-200 lg:h-7 lg:w-7"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                {resumeMenuOpen && (resumes?.length ?? 0) > 1 && (
+                  <div
+                    className="absolute bottom-full left-0 z-20 mb-1.5 w-56 overflow-hidden rounded-xl border border-gray-100 bg-white py-1 shadow-[0_12px_40px_rgba(15,23,42,0.14)]"
+                    style={{ animation: "panelFadeIn 0.15s ease-out" }}
+                  >
+                    {resumes?.map((r) => (
+                      <button
+                        key={r.id}
+                        type="button"
+                        onClick={() => {
+                          setActiveResumeId(r.id);
+                          setResumeMenuOpen(false);
+                        }}
+                        className={cn(
+                          "flex min-h-11 w-full items-center justify-between gap-2 px-3 text-left text-xs transition-colors lg:min-h-9",
+                          r.id === activeResumeId ? "bg-gray-100 font-semibold text-gray-900" : "text-gray-600 hover:bg-gray-50"
+                        )}
+                      >
+                        <span className="truncate">{r.filename}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+          <form
+            className="flex items-end gap-1 rounded-2xl border border-gray-200 bg-white p-1 shadow-[0_2px_12px_rgba(15,23,42,0.06)] transition-shadow focus-within:border-green-300 focus-within:ring-4 focus-within:ring-green-400/15"
+            onSubmit={(e) => {
+              e.preventDefault();
+              send(input);
+            }}
+          >
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept=".pdf,.docx"
+              className="hidden"
+              onChange={(e) => {
+                handleFile(e.target.files?.[0]);
+                e.target.value = "";
+              }}
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isBusy}
+              title="Attach your resume"
+              aria-label="Attach your resume"
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-700 disabled:opacity-40"
+            >
+              <Paperclip className="h-4 w-4" />
+            </button>
+            <textarea
+              ref={inputRef}
+              value={input}
+              rows={1}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => {
+                // Enter sends, Shift+Enter starts a new line — what every chat
+                // product does, and the only way to write a multi-line prompt.
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  send(input);
+                }
+              }}
+              aria-label="Message the assistant"
+              // Kept short on purpose: the composer textarea is only ~240px wide
+              // at 360px, so any longer placeholder wraps and looks broken against
+              // the one-row height. The greeting already carries the full hint.
+              placeholder="Ask about jobs…"
+              // 16px on phones: iOS Safari zooms the whole page when a smaller
+              // field is focused, and doesn't zoom back out afterwards.
+              className="scroll-thin min-h-11 flex-1 resize-none overflow-hidden bg-transparent px-1 py-[11px] text-base leading-[22px] text-gray-900 outline-none! placeholder:text-gray-500 sm:text-sm sm:leading-[22px]"
+            />
+            <button
+              type="submit"
+              aria-label="Send message"
+              disabled={isBusy || !input.trim()}
+              className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-green-600 text-white transition-colors hover:bg-green-700 active:bg-green-800 disabled:bg-gray-100 disabled:text-gray-400"
+            >
+              {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowUp className="h-4 w-4" />}
+            </button>
+          </form>
+          <p className="mt-1.5 text-center text-xs text-gray-500">AI can make mistakes. Check details on the job page.</p>
+        </div>
+      </div>
     </div>
   );
 }
